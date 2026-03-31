@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <iostream>
+#include <random>
+
 
 /**
  * @brief Simule la source d'information. Elle doit remplir un tableau de bits aléatoires.
@@ -77,12 +79,37 @@ void modem_BPSK_modulate(const uint8_t *C_N, int32_t *X_N, size_t N){
 	}
 }
 
+
+/* add white Gaussian noise
+cette fonction prend des X et renvoie des Y = X+N N etant le bruit
+*/
+void channel_AWGN_add_noise(const int32_t *X_N, float *Y_N, size_t N, float sigma){
+	std::normal_distribution<double> distribution(0.0, sigma);
+	std::default_random_engine generator;
+	for(size_t i = 0; i < N; i++){
+		Y_N[i] = (float)X_N[i] + distribution(generator);
+	}
+}
+// demodulator, just copies Y_N in L_N for now
+void modem_BPSK_demodulate(const float *Y_N, float *L_N, size_t N, float sigma);
+// hard decoder: first hard decides each LLR and then makes a majority vote
+void codec_repetition_hard_decode(const float *L_N, uint8_t *V_K, size_t K, size_t n_reps);
+// soft decoder: computes the mean of each LLR to hard decide the bits
+void codec_repetition_soft_decode(const float *L_N, uint8_t *V_K, size_t K, size_t n_reps);
+// update `n_bit_errors` and `n_frame_errors` variables depending on `U_K` and `V_K`
+void monitor_check_errors(const uint8_t *U_K, const uint8_t *V_K, size_t K, uint64_t *n_bit_errors, uint64_t *n_frame_errors);
+
+
+
+#include <chrono>
 int main(void){
+	auto start = std::chrono::high_resolution_clock::now();
 	size_t K = 4;
 	size_t n_reps = 3;
 	uint8_t * U_K = (uint8_t *)calloc(K, sizeof(uint8_t));
 	uint8_t * C_N = (uint8_t *)calloc((K * n_reps) , sizeof(uint8_t));
 	int32_t * X_N = (int32_t *)calloc((K * n_reps) , sizeof(int32_t));
+	float * Y_N = (float *)calloc((K * n_reps) , sizeof(float));
 	printf("U_K avant :\n");
 	for(int i = 0; i < K; i++){
 		printf("%d",U_K[i]);
@@ -125,9 +152,18 @@ int main(void){
 	}
 	printf("\n");
 
+	channel_AWGN_add_noise(X_N,Y_N,K*n_reps,0.5);
+	printf("Y_N après :\n");
+	for(int i = 0; i < K * n_reps; i++){
+		printf("%f",Y_N[i]);
+	}
+	printf("\n");
 
 	free(U_K);
 	free(C_N);
 	free(X_N);
+	auto fin = std::chrono::high_resolution_clock::now();
+	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(fin - start);
+	std::cout << "ça prend " << duration.count() << " ms" << std::endl;
 	return 0;
 }
