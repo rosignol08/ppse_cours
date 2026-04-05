@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <iostream>
 #include <random>
+#include <ctime>
 
 
 /**
@@ -28,7 +29,7 @@ void source_generate(uint8_t * U_K, size_t K){
 	}
 	uint8_t b = 0;
 	srand(time(NULL));
-	for(int i = 0; i < K;++i){
+	for(size_t i = 0; i < K;++i){
 		b = rand() % 2;
 		if(b==0){
 			U_K[i] = 0;
@@ -90,26 +91,102 @@ void channel_AWGN_add_noise(const int32_t *X_N, float *Y_N, size_t N, float sigm
 		Y_N[i] = (float)X_N[i] + distribution(generator);
 	}
 }
-// demodulator, just copies Y_N in L_N for now
-void modem_BPSK_demodulate(const float *Y_N, float *L_N, size_t N, float sigma);
+// demodulator, just copies Y_N in L_N for now il converti les symboles en LLR
+void modem_BPSK_demodulate(const float *Y_N, float *L_N, size_t N, float sigma){
+	/*
+	LLR = log10((P(b=0|y))/(P(b=1|y)))
+	positif = 0
+	negatif = -1
+	pour l'instant on va juste copire Y_N dans L_N
+	*/
+	//on dit que N est egale a la taille des deux tableaux
+	for(int i = 0; i < N;i++){
+		L_N[i] = Y_N[i]; // *sigma ? pour l'instant je sait pas
+	}
+	return;
+}
+
 // hard decoder: first hard decides each LLR and then makes a majority vote
-void codec_repetition_hard_decode(const float *L_N, uint8_t *V_K, size_t K, size_t n_reps);
+void codec_repetition_hard_decode(const float *L_N, uint8_t *V_K, size_t K, size_t n_reps){
+	for(size_t i = 0; i < K;i++){
+		int vote = 0;//le buffer qui va stoquer les valeur du vote pour chaque nombre
+		for(size_t j = 0; j < n_reps;j++){
+			if(L_N[(j*K)+i] >= 0.0f){
+				vote++;
+			}else{
+				vote--;
+			}
+			std::cout << (j*K)+i << "eme element = " << L_N[(j*K)+i] << std::endl;
+		}
+		V_K[i] = (vote > 0) ? 0 : 1;
+		vote = 0; //remet à 0
+	}
+}
 // soft decoder: computes the mean of each LLR to hard decide the bits
-void codec_repetition_soft_decode(const float *L_N, uint8_t *V_K, size_t K, size_t n_reps);
+void codec_repetition_soft_decode(const float *L_N, uint8_t *V_K, size_t K, size_t n_reps){
+	for(size_t i = 0; i < K;i++){
+		float vote = 0.0f;
+		for(size_t j = 0; j < n_reps;j++){
+			//faut faire la somme des valeurs
+			vote += L_N[(j*K)+i];
+			std::cout << (j*K)+i << "eme element = " << L_N[(j*K)+i] << std::endl;//debut
+		}
+		V_K[i] = (vote > 0.0f) ? 0 : 1;
+		vote = 0.0f; //remet à 0
+	}
+}
+
+
 // update `n_bit_errors` and `n_frame_errors` variables depending on `U_K` and `V_K`
-void monitor_check_errors(const uint8_t *U_K, const uint8_t *V_K, size_t K, uint64_t *n_bit_errors, uint64_t *n_frame_errors);
+
+/*
+Il calcule le nombre de trames erronée notée Fe
+permet de définir le taux d’erreurs trames c’est sur le nombre totales de trames transmisses le nombre de trames erronées.
+Be = bit erronée
+Fn le nombre de trames tout cours.
+FER = Fe/Fn
+Bit error rate = Be/ (nombre totales de trames transmises Fn * K)
+(K nombre de bits d’information)
+
+*/
+//n_bit_errorsça fait K taille et n_frame_errors ça fait n_reps taille
+void monitor_check_errors(const uint8_t *U_K, const uint8_t *V_K, size_t K, uint64_t *n_bit_errors, uint64_t *n_frame_errors){
+	bool frame_error = false; //obligé de faire un booleen psk si jai 2 bit faux c'est 1 trame fausse
+	for(size_t i = 0; i<K;i++){
+		if(U_K[i]!=V_K[i]){
+			(*n_bit_errors)++;
+			frame_error = true; //la frame est en erreur si au moins un bit est faux
+		}
+	}
+	if(frame_error){
+		(*n_frame_errors)++;
+	}
+	std::cout <<"il y a : " << *n_bit_errors << " erreurs et "<< *n_frame_errors << " trames fausses "<< std::endl;
+}
 
 
 
 #include <chrono>
 int main(void){
 	auto start = std::chrono::high_resolution_clock::now();
+	
 	size_t K = 4;
 	size_t n_reps = 3;
+	
 	uint8_t * U_K = (uint8_t *)calloc(K, sizeof(uint8_t));
 	uint8_t * C_N = (uint8_t *)calloc((K * n_reps) , sizeof(uint8_t));
+	uint8_t * V_K = (uint8_t *)calloc(K , sizeof(uint8_t));
+	
 	int32_t * X_N = (int32_t *)calloc((K * n_reps) , sizeof(int32_t));
+	
+	uint64_t n_bit_errors = 0;
+	uint64_t n_trames_errors = 0;
+
 	float * Y_N = (float *)calloc((K * n_reps) , sizeof(float));
+	float * L_N = (float *)calloc((K * n_reps) , sizeof(float));
+	
+	float sigma = 0.5f;
+
 	printf("U_K avant :\n");
 	for(int i = 0; i < K; i++){
 		printf("%d",U_K[i]);
@@ -152,16 +229,32 @@ int main(void){
 	}
 	printf("\n");
 
-	channel_AWGN_add_noise(X_N,Y_N,K*n_reps,0.5);
+	channel_AWGN_add_noise(X_N,Y_N,K*n_reps,sigma);
 	printf("Y_N après :\n");
 	for(int i = 0; i < K * n_reps; i++){
 		printf("%f",Y_N[i]);
 	}
+
 	printf("\n");
 
+	modem_BPSK_demodulate(Y_N,L_N,K*n_reps,sigma);
+	printf("V_N après :\n");
+	for(int i = 0; i < K * n_reps; i++){
+		printf("%f",L_N[i]);
+	}
+
+	printf("\n");
+
+
+	codec_repetition_hard_decode(L_N,V_K,K,n_reps);
+	monitor_check_errors(U_K,V_K,K,&n_bit_errors,&n_trames_errors);
+	codec_repetition_soft_decode(L_N,V_K,K,n_reps);
 	free(U_K);
 	free(C_N);
+	free(V_K);
 	free(X_N);
+	free(L_N);
+	free(Y_N);
 	auto fin = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(fin - start);
 	std::cout << "ça prend " << duration.count() << " ms" << std::endl;
