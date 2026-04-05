@@ -51,7 +51,7 @@ void source_generate(uint8_t * U_K, size_t K){
  * @return void
  */
 void codec_repetition_encode(const uint8_t *U_K, uint8_t *C_N, size_t K, size_t n_reps){
-	for(int i = 0; i<K*n_reps;i++){
+	for(size_t i = 0; i<K*n_reps;i++){
 		C_N[i] = U_K[i%K];
 	}
 	return;
@@ -71,7 +71,7 @@ void codec_repetition_encode(const uint8_t *U_K, uint8_t *C_N, size_t K, size_t 
  * @return void
  */
 void modem_BPSK_modulate(const uint8_t *C_N, int32_t *X_N, size_t N){
-	for(int i = 0; i < N; i++){
+	for(size_t i = 0; i < N; i++){
 		if(C_N[i] == 0){
 			X_N[i] = 1;
 		}else{
@@ -100,7 +100,7 @@ void modem_BPSK_demodulate(const float *Y_N, float *L_N, size_t N, float sigma){
 	pour l'instant on va juste copire Y_N dans L_N
 	*/
 	//on dit que N est egale a la taille des deux tableaux
-	for(int i = 0; i < N;i++){
+	for(size_t i = 0; i < N;i++){
 		L_N[i] = Y_N[i]; // *sigma ? pour l'instant je sait pas
 	}
 	return;
@@ -188,7 +188,7 @@ int main(void){
 	float sigma = 0.5f;
 
 	printf("U_K avant :\n");
-	for(int i = 0; i < K; i++){
+	for(size_t i = 0; i < K; i++){
 		printf("%d",U_K[i]);
 	}
 
@@ -197,41 +197,41 @@ int main(void){
 	source_generate(U_K,K);
 	
 	printf("U_K après :\n");
-	for(int i = 0; i < K; i++){
+	for(size_t i = 0; i < K; i++){
 		printf("%d",U_K[i]);
 	}
 	
 	printf("\n");
 	printf("C_N avant :\n");
-	for(int i = 0; i < K * n_reps; i++){
+	for(size_t i = 0; i < K * n_reps; i++){
 		printf("%d",C_N[i]);
 	}
 	codec_repetition_encode(U_K,C_N,K,n_reps);
 
 	printf("\n");
 	printf("C_N après :\n");
-	for(int i = 0; i < K * n_reps; i++){
+	for(size_t i = 0; i < K * n_reps; i++){
 		//std::cout << U_K[i] << std::endl;
 		printf("%d",C_N[i]);
 	}
 	
 	printf("\n");
 	printf("X_N avant :\n");
-	for(int i = 0; i < K * n_reps; i++){
+	for(size_t i = 0; i < K * n_reps; i++){
 		printf("%d",X_N[i]);
 	}
 	modem_BPSK_modulate(C_N,X_N,n_reps * K);
 
 	printf("\n");
 	printf("X_N après :\n");
-	for(int i = 0; i < K * n_reps; i++){
+	for(size_t i = 0; i < K * n_reps; i++){
 		printf("%d",X_N[i]);
 	}
 	printf("\n");
 
 	channel_AWGN_add_noise(X_N,Y_N,K*n_reps,sigma);
 	printf("Y_N après :\n");
-	for(int i = 0; i < K * n_reps; i++){
+	for(size_t i = 0; i < K * n_reps; i++){
 		printf("%f",Y_N[i]);
 	}
 
@@ -239,7 +239,7 @@ int main(void){
 
 	modem_BPSK_demodulate(Y_N,L_N,K*n_reps,sigma);
 	printf("V_N après :\n");
-	for(int i = 0; i < K * n_reps; i++){
+	for(size_t i = 0; i < K * n_reps; i++){
 		printf("%f",L_N[i]);
 	}
 
@@ -247,8 +247,12 @@ int main(void){
 
 
 	codec_repetition_hard_decode(L_N,V_K,K,n_reps);
+	printf("check des erreurs de hard decode \n");
 	monitor_check_errors(U_K,V_K,K,&n_bit_errors,&n_trames_errors);
+	printf("\n");
 	codec_repetition_soft_decode(L_N,V_K,K,n_reps);
+	printf("check des erreurs de soft decode \n");
+	monitor_check_errors(U_K,V_K,K,&n_bit_errors,&n_trames_errors);
 	free(U_K);
 	free(C_N);
 	free(V_K);
