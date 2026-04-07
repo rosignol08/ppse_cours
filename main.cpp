@@ -4,6 +4,9 @@
 #include <iostream>
 #include <random>
 #include <ctime>
+#include <chrono>
+
+#include <unistd.h>
 
 
 /**
@@ -164,10 +167,68 @@ void monitor_check_errors(const uint8_t *U_K, const uint8_t *V_K, size_t K, uint
 	std::cout <<"il y a : " << *n_bit_errors << " erreurs et "<< *n_frame_errors << " trames fausses "<< std::endl;
 }
 
+void montecarlo_simulation(){
+/*
+-m [min_SNR float] the first included Eb/N0 SNR to simulate (in dB),
+-M [max_SNR float] the last included Eb/N0 SNR to simulate (in dB),
+-s [step_val float] the constant step between two SNR points,
+-e [f_max uint] the number of frame errors to reach to explore one SNR point,
+-K [info_bits uint] the number of information bits,
+-N [codeword_size uint] the codeword size (has to be a multiple of K otherwise the program should return an error),
+-D ["rep-hard"|"rep-soft" string] select the decoder type.
+*/
+// l'algo de monte carlo qui fait le lancement en boucle du programme
 
+}
 
-#include <chrono>
-int main(void){
+int test[100000000];
+
+int main(int argc, char* argv[]){
+	if(argc != 14){
+		printf("t'as donné trop d'arguments\n");
+		printf("faut donner exemple : ./simulator -m 0 -M 15 -s 1 -e 100 -K 32 -N 128 -D 'rep-hard' \n");
+		return 0;
+	}
+	int opt;
+	int m_arg, M_arg, s_arg, e_arg, K_arg, N_arg;
+	std::string D_arg;
+
+	while ((opt = getopt(argc, argv, "m:M:s:e:K:N:D:")) != -1) {
+		switch (opt) {
+		case 'm':
+			//std::cout << "Option -a selected\n";
+			optarg;
+			break;
+		case 'M':
+			//std::cout << "Option -b selected with value: " << optarg << "\n";
+			optarg;
+			break;
+		case 's':
+			//std::cout << "Option -c selected\n";
+			optarg;
+			break;
+		case 'e':
+			//std::cout << "Option -c selected\n";
+			optarg;
+			break;
+		case 'K':
+			//std::cout << "Option -c selected\n";
+			optarg;
+			break;
+		case 'N':
+			//std::cout << "Option -c selected\n";
+			optarg;
+			break;
+		case 'D':
+			//std::cout << "Option -c selected\n";
+			optarg;
+			break;
+		case '?':
+			std::cerr << "Unknown option: " << static_cast<char>(optopt) << "\n";
+			break;
+		}
+	}
+
 	auto start = std::chrono::high_resolution_clock::now();
 	
 	size_t K = 4;
