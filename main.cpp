@@ -167,70 +167,18 @@ void monitor_check_errors(const uint8_t *U_K, const uint8_t *V_K, size_t K, uint
 	std::cout <<"il y a : " << *n_bit_errors << " erreurs et "<< *n_frame_errors << " trames fausses "<< std::endl;
 }
 
-void montecarlo_simulation(){
-/*
--m [min_SNR float] the first included Eb/N0 SNR to simulate (in dB),
--M [max_SNR float] the last included Eb/N0 SNR to simulate (in dB),
--s [step_val float] the constant step between two SNR points,
--e [f_max uint] the number of frame errors to reach to explore one SNR point,
--K [info_bits uint] the number of information bits,
--N [codeword_size uint] the codeword size (has to be a multiple of K otherwise the program should return an error),
--D ["rep-hard"|"rep-soft" string] select the decoder type.
-*/
-// l'algo de monte carlo qui fait le lancement en boucle du programme
+void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, uint K_arg, uint N_arg, std::string D_arg){
+	/*
+	-m [min_SNR float] the first included Eb/N0 SNR to simulate (in dB),
+	-M [max_SNR float] the last included Eb/N0 SNR to simulate (in dB),
+	-s [step_val float] the constant step between two SNR points,
+	-e [f_max uint] the number of frame errors to reach to explore one SNR point,
+	-K [info_bits uint] the number of information bits,
+	-N [codeword_size uint] the codeword size (has to be a multiple of K otherwise the program should return an error),
+	-D ["rep-hard"|"rep-soft" string] select the decoder type.
+	*/
 
-}
 
-int test[100000000];
-
-int main(int argc, char* argv[]){
-	if(argc != 14){
-		printf("t'as donné trop d'arguments\n");
-		printf("faut donner exemple : ./simulator -m 0 -M 15 -s 1 -e 100 -K 32 -N 128 -D 'rep-hard' \n");
-		return 0;
-	}
-	int opt;
-	int m_arg, M_arg, s_arg, e_arg, K_arg, N_arg;
-	std::string D_arg;
-
-	while ((opt = getopt(argc, argv, "m:M:s:e:K:N:D:")) != -1) {
-		switch (opt) {
-		case 'm':
-			//std::cout << "Option -a selected\n";
-			optarg;
-			break;
-		case 'M':
-			//std::cout << "Option -b selected with value: " << optarg << "\n";
-			optarg;
-			break;
-		case 's':
-			//std::cout << "Option -c selected\n";
-			optarg;
-			break;
-		case 'e':
-			//std::cout << "Option -c selected\n";
-			optarg;
-			break;
-		case 'K':
-			//std::cout << "Option -c selected\n";
-			optarg;
-			break;
-		case 'N':
-			//std::cout << "Option -c selected\n";
-			optarg;
-			break;
-		case 'D':
-			//std::cout << "Option -c selected\n";
-			optarg;
-			break;
-		case '?':
-			std::cerr << "Unknown option: " << static_cast<char>(optopt) << "\n";
-			break;
-		}
-	}
-
-	auto start = std::chrono::high_resolution_clock::now();
-	
 	size_t K = 4;
 	size_t n_reps = 3;
 	
@@ -247,79 +195,177 @@ int main(int argc, char* argv[]){
 	float * L_N = (float *)calloc((K * n_reps) , sizeof(float));
 	
 	float sigma = 0.5f;
+	float Ber = 0.0f;
+	float Fer = 0.0f;
+	// l'algo de monte carlo qui fait le lancement en boucle du programme
+	int nb_erreurs, nb_bits_erreurs, nb_simulation;
+	nb_bits_erreurs = 0;
+	nb_simulation = 0;
+	for(float i = m_arg; i < M_arg; i += s_arg){
+		nb_erreurs = 0;
 
-	printf("U_K avant :\n");
-	for(size_t i = 0; i < K; i++){
-		printf("%d",U_K[i]);
+		float snr_symb = i + 10*log10f(K/N_arg);
+		sigma = sqrt(1/(2 * powf(10, snr_symb/10)));
+
+
+		while(nb_erreurs < e_arg){
+			nb_simulation++;
+			source_generate(U_K,K);
+			codec_repetition_encode(U_K,C_N,K,n_reps);
+			modem_BPSK_modulate(C_N,X_N,n_reps * K);
+			channel_AWGN_add_noise(X_N,Y_N,K*n_reps,sigma);
+			modem_BPSK_demodulate(Y_N,L_N,K*n_reps,sigma);
+			if(D_arg == "rep-hard"){
+				codec_repetition_hard_decode(L_N,V_K,K,n_reps);
+			}else{
+				codec_repetition_soft_decode(L_N,V_K,K,n_reps);
+			}
+			monitor_check_errors(U_K,V_K,K,&n_bit_errors,&n_trames_errors);
+			if(n_trames_errors > 0){
+				nb_erreurs++;
+			}
+			if(n_bit_errors > 0){
+				nb_bits_erreurs += n_bit_errors;
+			}
+			
+		}
+		Ber = nb_bits_erreurs / (nb_simulation*K);
+		Fer = nb_erreurs / nb_simulation;
+		std::cout << "Ber : " << Ber << std::endl;
+		std::cout << "Fer : " << Fer << std::endl;
 	}
-
-	printf("\n");
-	
-	source_generate(U_K,K);
-	
-	printf("U_K après :\n");
-	for(size_t i = 0; i < K; i++){
-		printf("%d",U_K[i]);
-	}
-	
-	printf("\n");
-	printf("C_N avant :\n");
-	for(size_t i = 0; i < K * n_reps; i++){
-		printf("%d",C_N[i]);
-	}
-	codec_repetition_encode(U_K,C_N,K,n_reps);
-
-	printf("\n");
-	printf("C_N après :\n");
-	for(size_t i = 0; i < K * n_reps; i++){
-		//std::cout << U_K[i] << std::endl;
-		printf("%d",C_N[i]);
-	}
-	
-	printf("\n");
-	printf("X_N avant :\n");
-	for(size_t i = 0; i < K * n_reps; i++){
-		printf("%d",X_N[i]);
-	}
-	modem_BPSK_modulate(C_N,X_N,n_reps * K);
-
-	printf("\n");
-	printf("X_N après :\n");
-	for(size_t i = 0; i < K * n_reps; i++){
-		printf("%d",X_N[i]);
-	}
-	printf("\n");
-
-	channel_AWGN_add_noise(X_N,Y_N,K*n_reps,sigma);
-	printf("Y_N après :\n");
-	for(size_t i = 0; i < K * n_reps; i++){
-		printf("%f",Y_N[i]);
-	}
-
-	printf("\n");
-
-	modem_BPSK_demodulate(Y_N,L_N,K*n_reps,sigma);
-	printf("V_N après :\n");
-	for(size_t i = 0; i < K * n_reps; i++){
-		printf("%f",L_N[i]);
-	}
-
-	printf("\n");
-
-
-	codec_repetition_hard_decode(L_N,V_K,K,n_reps);
-	printf("check des erreurs de hard decode \n");
-	monitor_check_errors(U_K,V_K,K,&n_bit_errors,&n_trames_errors);
-	printf("\n");
-	codec_repetition_soft_decode(L_N,V_K,K,n_reps);
-	printf("check des erreurs de soft decode \n");
-	monitor_check_errors(U_K,V_K,K,&n_bit_errors,&n_trames_errors);
 	free(U_K);
 	free(C_N);
 	free(V_K);
 	free(X_N);
 	free(L_N);
 	free(Y_N);
+}
+
+int main(int argc, char* argv[]){
+	//if(argc != 15){
+	//	printf("t'as donné trop d'arguments\n");
+	//	printf("faut donner exemple : ./simulator -m 0 -M 15 -s 1 -e 100 -K 32 -N 128 -D 'rep-hard' \n");
+	//	return 0;
+	//}
+	int opt;
+	float m_arg, M_arg, s_arg;
+	uint e_arg, K_arg, N_arg;
+	std::string D_arg;
+
+	while ((opt = getopt(argc, argv, "m:M:s:e:K:N:D:")) != -1) {
+		switch (opt) {
+		case 'm':
+			m_arg = atof(optarg);
+			std::cout << "la valeur c'est \n" << m_arg << std::endl;
+			break;
+		case 'M':
+			//std::cout << "Option -b selected with value: " << optarg << "\n";
+			M_arg = atof(optarg);
+			break;
+		case 's':
+			//std::cout << "Option -c selected\n";
+			s_arg = atof(optarg);
+			break;
+		case 'e':
+			//std::cout << "Option -c selected\n";
+			e_arg = atoi(optarg);
+			break;
+		case 'K':
+			//std::cout << "Option -c selected\n";
+			K_arg = atoi(optarg);
+			break;
+		case 'N':
+			//std::cout << "Option -c selected\n";
+			N_arg = atoi(optarg);
+			break;
+		case 'D':
+			//std::cout << "Option -c selected\n";
+			D_arg = optarg;
+			break;
+		case '?':
+			std::cerr << "Unknown option: " << static_cast<char>(optopt) << "\n";
+			break;
+		}
+	}
+
+	auto start = std::chrono::high_resolution_clock::now();
+	
+	montecarlo_simulation(m_arg, M_arg, s_arg,e_arg, K_arg, N_arg,D_arg);
+	//printf("U_K avant :\n");
+	//for(size_t i = 0; i < K; i++){
+	//	printf("%d",U_K[i]);
+	//}
+
+	//printf("\n");
+	
+	//source_generate(U_K,K);
+	
+	//printf("U_K après :\n");
+	//for(size_t i = 0; i < K; i++){
+	//	printf("%d",U_K[i]);
+	//}
+	
+	//printf("\n");
+	//printf("C_N avant :\n");
+	//for(size_t i = 0; i < K * n_reps; i++){
+	//	printf("%d",C_N[i]);
+	//}
+	//codec_repetition_encode(U_K,C_N,K,n_reps);
+
+	//printf("\n");
+	//printf("C_N après :\n");
+	//for(size_t i = 0; i < K * n_reps; i++){
+	//	//std::cout << U_K[i] << std::endl;
+	//	printf("%d",C_N[i]);
+	//}
+	
+	//printf("\n");
+	//printf("X_N avant :\n");
+	//for(size_t i = 0; i < K * n_reps; i++){
+	//	printf("%d",X_N[i]);
+	//}
+	//modem_BPSK_modulate(C_N,X_N,n_reps * K);
+
+	//printf("\n");
+	//printf("X_N après :\n");
+	//for(size_t i = 0; i < K * n_reps; i++){
+	//	printf("%d",X_N[i]);
+	//}
+	//printf("\n");
+
+	//channel_AWGN_add_noise(X_N,Y_N,K*n_reps,sigma);
+
+	//printf("Y_N après :\n");
+	//for(size_t i = 0; i < K * n_reps; i++){
+	//	printf("%f",Y_N[i]);
+	//}
+
+	//printf("\n");
+
+	//modem_BPSK_demodulate(Y_N,L_N,K*n_reps,sigma);
+	
+	//printf("V_N après :\n");
+	//for(size_t i = 0; i < K * n_reps; i++){
+	//	printf("%f",L_N[i]);
+	//}
+
+	//printf("\n");
+
+
+	//codec_repetition_hard_decode(L_N,V_K,K,n_reps);
+	//printf("check des erreurs de hard decode \n");
+	//monitor_check_errors(U_K,V_K,K,&n_bit_errors,&n_trames_errors);
+	//printf("\n");
+	//codec_repetition_soft_decode(L_N,V_K,K,n_reps);
+	//printf("check des erreurs de soft decode \n");
+	//monitor_check_errors(U_K,V_K,K,&n_bit_errors,&n_trames_errors);
+	//free(U_K);
+	//free(C_N);
+	//free(V_K);
+	//free(X_N);
+	//free(L_N);
+	//free(Y_N);
 	auto fin = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(fin - start);
 	std::cout << "ça prend " << duration.count() << " ms" << std::endl;
