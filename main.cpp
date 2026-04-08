@@ -7,6 +7,7 @@
 #include <chrono>
 
 #include <unistd.h>
+#include <fstream>
 
 
 /**
@@ -119,7 +120,7 @@ void codec_repetition_hard_decode(const float *L_N, uint8_t *V_K, size_t K, size
 			}else{
 				vote--;
 			}
-			std::cout << (j*K)+i << "eme element = " << L_N[(j*K)+i] << std::endl;
+			//std::cout << (j*K)+i << "eme element = " << L_N[(j*K)+i] << std::endl;
 		}
 		V_K[i] = (vote > 0) ? 0 : 1;
 		vote = 0; //remet à 0
@@ -132,7 +133,7 @@ void codec_repetition_soft_decode(const float *L_N, uint8_t *V_K, size_t K, size
 		for(size_t j = 0; j < n_reps;j++){
 			//faut faire la somme des valeurs
 			vote += L_N[(j*K)+i];
-			std::cout << (j*K)+i << "eme element = " << L_N[(j*K)+i] << std::endl;//debut
+			//std::cout << (j*K)+i << "eme element = " << L_N[(j*K)+i] << std::endl;//debut
 		}
 		V_K[i] = (vote > 0.0f) ? 0 : 1;
 		vote = 0.0f; //remet à 0
@@ -164,10 +165,28 @@ void monitor_check_errors(const uint8_t *U_K, const uint8_t *V_K, size_t K, uint
 	if(frame_error){
 		(*n_frame_errors)++;
 	}
-	std::cout <<"il y a : " << *n_bit_errors << " erreurs et "<< *n_frame_errors << " trames fausses "<< std::endl;
+	//std::cout <<"il y a : " << *n_bit_errors << " erreurs et "<< *n_frame_errors << " trames fausses "<< std::endl;
 }
 
-void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, uint K_arg, uint N_arg, std::string D_arg){
+//faut une fonction pour ajouter les resultats dans un fichier csv
+//j'ai trouvé ça sur internet
+void append_result(const std::string &filename, float snr, float ber, float fer) {
+    // std::ios::app permet d'ajouter à la fin du fichier sans l'écraser
+    std::ofstream file(filename, std::ios::app);
+
+    if (!file.is_open()) {
+        std::cerr << "Erreur: Impossible d'ouvrir le fichier '" << filename << "'.\n";
+        return;
+    }
+    
+    // Écrit les nouvelles valeurs exactement comme tu l'as demandé :
+    file << "SNR : " << snr << " | Ber : " << ber << " | Fer : " << fer << "\n";
+
+    file.close();
+}
+
+
+void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, uint K_arg, uint N_arg, std::string D_arg,const std::string &filename ){
 	/*
 	-m [min_SNR float] the first included Eb/N0 SNR to simulate (in dB),
 	-M [max_SNR float] the last included Eb/N0 SNR to simulate (in dB),
@@ -204,7 +223,7 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 	for(float i = m_arg; i < M_arg; i += s_arg){
 		nb_erreurs = 0;
 
-		float snr_symb = i + 10*log10f(K/N_arg);
+		float snr_symb = i + 10*log10f((float)K/N_arg); //sinon ça donne 0 et ça fait bugger tout le programme
 		sigma = sqrt(1/(2 * powf(10, snr_symb/10)));
 
 
@@ -233,6 +252,9 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 		Fer = nb_erreurs / nb_simulation;
 		std::cout << "Ber : " << Ber << std::endl;
 		std::cout << "Fer : " << Fer << std::endl;
+
+		// On ajoute les résultats dans le fichier à chaque itération
+		append_result(filename, i, Ber, Fer);
 	}
 	free(U_K);
 	free(C_N);
@@ -241,6 +263,7 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 	free(L_N);
 	free(Y_N);
 }
+
 
 int main(int argc, char* argv[]){
 	//if(argc != 15){
@@ -291,7 +314,8 @@ int main(int argc, char* argv[]){
 
 	auto start = std::chrono::high_resolution_clock::now();
 	
-	montecarlo_simulation(m_arg, M_arg, s_arg,e_arg, K_arg, N_arg,D_arg);
+	std::string output_filename = "results.csv";
+	montecarlo_simulation(m_arg, M_arg, s_arg, e_arg, K_arg, N_arg, D_arg, output_filename);
 	//printf("U_K avant :\n");
 	//for(size_t i = 0; i < K; i++){
 	//	printf("%d",U_K[i]);
