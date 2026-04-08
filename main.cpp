@@ -95,17 +95,17 @@ void channel_AWGN_add_noise(const int32_t *X_N, float *Y_N, size_t N, float sigm
 		Y_N[i] = (float)X_N[i] + distribution(generator);
 	}
 }
-// demodulator, just copies Y_N in L_N for now il converti les symboles en LLR
+// demodulator, convertit les symboles reçus en LLR
 void modem_BPSK_demodulate(const float *Y_N, float *L_N, size_t N, float sigma){
 	/*
-	LLR = log10((P(b=0|y))/(P(b=1|y)))
-	positif = 0
-	negatif = -1
-	pour l'instant on va juste copire Y_N dans L_N
+	LLR exact pour canal AWGN et BPSK (+1/-1) :
+	LLR(y) = ln( P(x=+1 | y) / P(x=-1 | y) ) = 2 * y / sigma^2
 	*/
-	//on dit que N est egale a la taille des deux tableaux
-	for(size_t i = 0; i < N;i++){
-		L_N[i] = Y_N[i]; // *sigma ? pour l'instant je sait pas
+	float variance = sigma * sigma;
+	float facteur = 2.0f / variance;
+	
+	for(size_t i = 0; i < N; i++){
+		L_N[i] = Y_N[i] * facteur;//faut commenter * facteur pour avoir la fonction de base
 	}
 	return;
 }
@@ -161,9 +161,9 @@ void monitor_check_errors(const uint8_t *U_K, const uint8_t *V_K, size_t K, uint
 			(*n_bit_errors)++;
 			frame_error = true; //la frame est en erreur si au moins un bit est faux
 		}
-	}
-	if(frame_error){
-		(*n_frame_errors)++;
+		if(frame_error){
+			(*n_frame_errors)++;
+		}
 	}
 	//std::cout <<"il y a : " << *n_bit_errors << " erreurs et "<< *n_frame_errors << " trames fausses "<< std::endl;
 }
