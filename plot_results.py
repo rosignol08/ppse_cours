@@ -6,7 +6,7 @@ fer_list = []
 
 # On lit le fichier généré par le programme C++
 try:
-    with open('results_sim2.csv', 'r') as f:
+    with open('results.csv', 'r') as f:
         for line in f:
             # On ignore les lignes vides
             if not line.strip():

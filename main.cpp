@@ -161,9 +161,9 @@ void monitor_check_errors(const uint8_t *U_K, const uint8_t *V_K, size_t K, uint
 			(*n_bit_errors)++;
 			frame_error = true; //la frame est en erreur si au moins un bit est faux
 		}
-		if(frame_error){
-			(*n_frame_errors)++;
-		}
+	}
+	if(frame_error){
+		(*n_frame_errors)++;
 	}
 	//std::cout <<"il y a : " << *n_bit_errors << " erreurs et "<< *n_frame_errors << " trames fausses "<< std::endl;
 }
@@ -248,8 +248,8 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 			}
 			
 		}
-		Ber = nb_bits_erreurs / (nb_simulation*K);
-		Fer = nb_erreurs / nb_simulation;
+		Ber = (float)nb_bits_erreurs / (nb_simulation * K);
+		Fer = (float)nb_erreurs / nb_simulation;
 		std::cout << "Ber : " << Ber << std::endl;
 		std::cout << "Fer : " << Fer << std::endl;
 
