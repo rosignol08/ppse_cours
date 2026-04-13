@@ -7,23 +7,31 @@ fer_list = []
 # On lit le fichier généré par le programme C++
 try:
     with open('results.csv', 'r') as f:
+        # 1. On ignore la première ligne car c'est l'en-tête (Eb/N0,Es/N0,...)
+        next(f) 
+        
         for line in f:
             # On ignore les lignes vides
             if not line.strip():
                 continue
                 
-            # La ligne ressemble à "SNR : 0 | Ber : 0.5 | Fer : 1"
-            parts = line.split('|')
-            if len(parts) == 3:
+            # 2. On coupe la ligne à chaque virgule
+            parts = line.split(',')
+            
+            # 3. On vérifie qu'on a bien nos 10 colonnes
+            if len(parts) == 10:
                 try:
-                    # On extrait les valeurs numériques
-                    snr = float(parts[0].split(':')[1].strip())
-                    ber = float(parts[1].split(':')[1].strip())
-                    fer = float(parts[2].split(':')[1].strip())
+                    # On récupère directement les colonnes qui nous intéressent
+                    # Index 0 = Eb/N0 (SNR), Index 6 = BER, Index 7 = FER
+                    snr = float(parts[0])
+                    ber = float(parts[6])
+                    fer = float(parts[7])
                     
-                    snr_list.append(snr)
-                    ber_list.append(ber)
-                    fer_list.append(fer)
+                    # Petite sécurité : log(0) fait planter le graphique, on ignore si c'est 0
+                    if ber > 0 and fer > 0:
+                        snr_list.append(snr)
+                        ber_list.append(ber)
+                        fer_list.append(fer)
                 except ValueError:
                     continue
 except FileNotFoundError:

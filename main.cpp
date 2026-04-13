@@ -27,12 +27,11 @@
  */
 void source_generate(uint8_t * U_K, size_t K){
 	//check de Securitée
-	if(sizeof(U_K)<K){
-		perror("k trop grand");
-		return;
-	}
+	//if(sizeof(U_K)<K){
+	//	perror("k trop grand");
+	//	return;
+	//}
 	uint8_t b = 0;
-	srand(time(NULL));
 	for(size_t i = 0; i < K;++i){
 		b = rand() % 2;
 		if(b==0){
@@ -89,8 +88,9 @@ void modem_BPSK_modulate(const uint8_t *C_N, int32_t *X_N, size_t N){
 cette fonction prend des X et renvoie des Y = X+N N etant le bruit
 */
 void channel_AWGN_add_noise(const int32_t *X_N, float *Y_N, size_t N, float sigma){
+	static std::default_random_engine generator(std::chrono::system_clock::now().time_since_epoch().count());
 	std::normal_distribution<double> distribution(0.0, sigma);
-	std::default_random_engine generator;
+	//std::default_random_engine generator;
 	for(size_t i = 0; i < N; i++){
 		Y_N[i] = (float)X_N[i] + distribution(generator);
 	}
@@ -170,7 +170,7 @@ void monitor_check_errors(const uint8_t *U_K, const uint8_t *V_K, size_t K, uint
 
 //faut une fonction pour ajouter les resultats dans un fichier csv
 //j'ai trouvé ça sur internet
-void append_result(const std::string &filename, float snr, float ber, float fer) {
+void append_result(const std::string &filename, float eb_n0, float es_n0, float sigma, int be, int fe, int fn, float ber, float fer, double sim_time, double time_per_frame) {
     // std::ios::app permet d'ajouter à la fin du fichier sans l'écraser
     std::ofstream file(filename, std::ios::app);
 
@@ -179,8 +179,10 @@ void append_result(const std::string &filename, float snr, float ber, float fer)
         return;
     }
     
-    // Écrit les nouvelles valeurs exactement comme tu l'as demandé :
-    file << "SNR : " << snr << " | Ber : " << ber << " | Fer : " << fer << "\n";
+    //valeurs ecrites dans le csv
+    file << eb_n0 << "," << es_n0 << "," << sigma << "," 
+        << be << "," << fe << "," << fn << "," 
+        << ber << "," << fer << "," << sim_time << "," << time_per_frame << "\n";
 
     file.close();
 }
@@ -197,9 +199,8 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 	-D ["rep-hard"|"rep-soft" string] select the decoder type.
 	*/
 
-
-	size_t K = 4;
-	size_t n_reps = 3;
+	size_t K = K_arg;
+	size_t n_reps = N_arg / K_arg;
 	
 	uint8_t * U_K = (uint8_t *)calloc(K, sizeof(uint8_t));
 	uint8_t * C_N = (uint8_t *)calloc((K * n_reps) , sizeof(uint8_t));
@@ -207,8 +208,6 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 	
 	int32_t * X_N = (int32_t *)calloc((K * n_reps) , sizeof(int32_t));
 	
-	uint64_t n_bit_errors = 0;
-	uint64_t n_trames_errors = 0;
 
 	float * Y_N = (float *)calloc((K * n_reps) , sizeof(float));
 	float * L_N = (float *)calloc((K * n_reps) , sizeof(float));
@@ -216,11 +215,14 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 	float sigma = 0.5f;
 	float Ber = 0.0f;
 	float Fer = 0.0f;
+	uint64_t n_bit_errors = 0;
+	uint64_t n_trames_errors = 0;
 	// l'algo de monte carlo qui fait le lancement en boucle du programme
 	int nb_erreurs, nb_bits_erreurs, nb_simulation;
-	nb_bits_erreurs = 0;
-	nb_simulation = 0;
 	for(float i = m_arg; i < M_arg; i += s_arg){
+		auto start_snr = std::chrono::high_resolution_clock::now(); //debut mesure
+		nb_bits_erreurs = 0;
+		nb_simulation = 0;
 		nb_erreurs = 0;
 
 		float snr_symb = i + 10*log10f((float)K/N_arg); //sinon ça donne 0 et ça fait bugger tout le programme
@@ -229,6 +231,8 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 
 		while(nb_erreurs < e_arg){
 			nb_simulation++;
+			n_bit_errors = 0;
+			n_trames_errors = 0;
 			source_generate(U_K,K);
 			codec_repetition_encode(U_K,C_N,K,n_reps);
 			modem_BPSK_modulate(C_N,X_N,n_reps * K);
@@ -240,21 +244,28 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 				codec_repetition_soft_decode(L_N,V_K,K,n_reps);
 			}
 			monitor_check_errors(U_K,V_K,K,&n_bit_errors,&n_trames_errors);
-			if(n_trames_errors > 0){
-				nb_erreurs++;
-			}
-			if(n_bit_errors > 0){
-				nb_bits_erreurs += n_bit_errors;
-			}
+			//if(n_trames_errors > 0){
+			nb_erreurs+= n_trames_errors;
+			//}
+			//if(n_bit_errors > 0){
+			nb_bits_erreurs += n_bit_errors;
+			//}
 			
 		}
 		Ber = (float)nb_bits_erreurs / (nb_simulation * K);
 		Fer = (float)nb_erreurs / nb_simulation;
-		std::cout << "Ber : " << Ber << std::endl;
-		std::cout << "Fer : " << Fer << std::endl;
+		//std::cout << "Ber : " << Ber << std::endl;
+		//std::cout << "Fer : " << Fer << std::endl;
+		
+		std::cout << "SNR : " << i << " | Ber : " << Ber << " | Fer : " << Fer << " | Trames simulees : " << nb_simulation << std::endl;
 
-		// On ajoute les résultats dans le fichier à chaque itération
-		append_result(filename, i, Ber, Fer);
+		auto end_snr = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end_snr - start_snr;
+        double sim_time = diff.count(); //temps total pour ce SNR (en secondes)
+        double time_per_frame = sim_time / nb_simulation; //temps moyen par trame
+
+		//ça ajoute les résultats dans le fichier à chaque itération
+		append_result(filename, i, snr_symb, sigma, nb_bits_erreurs, nb_erreurs, nb_simulation, Ber, Fer, sim_time, time_per_frame);
 	}
 	free(U_K);
 	free(C_N);
@@ -266,21 +277,18 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 
 
 int main(int argc, char* argv[]){
-	//if(argc != 15){
-	//	printf("t'as donné trop d'arguments\n");
-	//	printf("faut donner exemple : ./simulator -m 0 -M 15 -s 1 -e 100 -K 32 -N 128 -D 'rep-hard' \n");
-	//	return 0;
-	//}
 	int opt;
 	float m_arg, M_arg, s_arg;
 	uint e_arg, K_arg, N_arg;
 	std::string D_arg;
 
-	while ((opt = getopt(argc, argv, "m:M:s:e:K:N:D:")) != -1) {
+	std::string output_filename = "results.csv"; //si pas d'arguments
+
+	while ((opt = getopt(argc, argv, "m:M:s:e:K:N:D:o:")) != -1) {
 		switch (opt) {
 		case 'm':
 			m_arg = atof(optarg);
-			std::cout << "la valeur c'est \n" << m_arg << std::endl;
+			//std::cout << "la valeur c'est \n" << m_arg << std::endl;
 			break;
 		case 'M':
 			//std::cout << "Option -b selected with value: " << optarg << "\n";
@@ -306,16 +314,32 @@ int main(int argc, char* argv[]){
 			//std::cout << "Option -c selected\n";
 			D_arg = optarg;
 			break;
+		case 'o':
+		 	output_filename = optarg;
+			break;
 		case '?':
 			std::cerr << "Unknown option: " << static_cast<char>(optopt) << "\n";
 			break;
 		}
 	}
+	
+	srand(time(NULL));
 
 	auto start = std::chrono::high_resolution_clock::now();
 	
-	std::string output_filename = "results.csv";
+
+	//std::string output_filename = "results.csv";
+
+	std::ofstream clear_file(output_filename);
+	clear_file << "Eb/N0,Es/N0,sigma,be,fe,fn,BER,FER,sim_time_s,time_per_frame_s\n";
+	clear_file.close();
+	
 	montecarlo_simulation(m_arg, M_arg, s_arg, e_arg, K_arg, N_arg, D_arg, output_filename);
+	auto fin = std::chrono::high_resolution_clock::now();
+	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(fin - start);
+	std::cout << "ça a pris " << duration.count() << " ms" << std::endl;
+	return 0;
+}
 	//printf("U_K avant :\n");
 	//for(size_t i = 0; i < K; i++){
 	//	printf("%d",U_K[i]);
@@ -390,8 +414,4 @@ int main(int argc, char* argv[]){
 	//free(X_N);
 	//free(L_N);
 	//free(Y_N);
-	auto fin = std::chrono::high_resolution_clock::now();
-	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(fin - start);
-	std::cout << "ça prend " << duration.count() << " ms" << std::endl;
-	return 0;
-}
+	
