@@ -56,6 +56,8 @@ plt.title('Comparaison Codec Répétition : Décodage Hard vs Soft et tailles de
 plt.grid(True, which="both", ls="--", alpha=0.4)
 plt.legend()
 
+plt.xticks(range(0, 16))
+
 # Sauvegarde et affichage
 plt.savefig('comparaison_globale.png')
 print("Graphique généré et sauvegardé sous 'comparaison_globale.png'")
