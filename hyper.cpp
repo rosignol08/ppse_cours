@@ -109,7 +109,7 @@ void montecarlo_simulation(float m_arg, float M_arg, float s_arg, uint32_t e_arg
     int n_threads = omp_get_max_threads(); // utilise tous les cœurs disponibles
     std::cout << "Simulation multithreads avec " << n_threads << " threads." << std::endl;
 
-    for (float snr_db = m_arg; snr_db < M_arg; snr_db += s_arg) {
+    for (float snr_db = m_arg; snr_db <= M_arg; snr_db += s_arg) {
         auto start_snr = std::chrono::high_resolution_clock::now();
 
         float snr_symb = snr_db + 10.0f * log10f((float)K / N_arg);

@@ -219,7 +219,7 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 	uint64_t n_trames_errors = 0;
 	// l'algo de monte carlo qui fait le lancement en boucle du programme
 	int nb_erreurs, nb_bits_erreurs, nb_simulation;
-	for(float i = m_arg; i < M_arg; i += s_arg){
+	for(float i = m_arg; i <= M_arg; i += s_arg){
 		auto start_snr = std::chrono::high_resolution_clock::now(); //debut mesure
 		nb_bits_erreurs = 0;
 		nb_simulation = 0;
