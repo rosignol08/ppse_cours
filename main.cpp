@@ -8,6 +8,7 @@
 
 #include <unistd.h>
 #include <fstream>
+#include <getopt.h>
 
 
 /**
@@ -206,8 +207,7 @@ void quantizer_transform8(const float *L_N, int8_t *L8_N, size_t N, size_t s, si
 	int32_t min_val = - (1 << (s - 1));
 	int32_t max_val =  (1 << (s - 1)) - 1;
 	//le scaling
-	float scale = 1.0f;
-	if (frac < 31) scale = (float)(1u << frac);
+	float scale = std::pow(2.0f, (float)f);
 
 	for (size_t i = 0; i < N; ++i) {
 		float scaled = L_N[i] * scale;
@@ -250,7 +250,7 @@ void codec_repetition_soft_decode8(const int8_t *L8_N, uint8_t *V_K, size_t K, s
 	}
 }
 
-void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, uint K_arg, uint N_arg, std::string D_arg,const std::string &filename, bool mod_all_ones ){
+void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, uint K_arg, uint N_arg, std::string D_arg,const std::string &filename, bool mod_all_ones,size_t s_quant,size_t f_quant ){
 	/*
 	-m [min_SNR float] the first included Eb/N0 SNR to simulate (in dB),
 	-M [max_SNR float] the last included Eb/N0 SNR to simulate (in dB),
@@ -273,6 +273,7 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 
 	float * Y_N = (float *)calloc((K * n_reps) , sizeof(float));
 	float * L_N = (float *)calloc((K * n_reps) , sizeof(float));
+	int8_t * L8_N = (int8_t *)calloc((K * n_reps) , sizeof(int8_t));
 	
 	float sigma = 0.5f;
 	float Ber = 0.0f;
@@ -309,10 +310,12 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 			}else if(D_arg == "rep-soft"){
 				codec_repetition_soft_decode(L_N,V_K,K,n_reps);
 			}else if(D_arg == "rep-hard8"){
-				codec_repetition_hard_decode8(L_N,V_K,K,n_reps);//probleme L_N est pas int 8
+				quantizer_transform8(L_N, L8_N, K*n_reps, s_quant, f_quant);
+				codec_repetition_hard_decode8(L8_N,V_K,K,n_reps);
 			}else{
 				//sinon c'est rep-soft8
-				codec_repetition_soft_decode8(L_N,V_K,K,n_reps);//probleme L_N est pas int 8
+				quantizer_transform8(L_N, L8_N, K*n_reps, s_quant, f_quant);
+				codec_repetition_soft_decode8(L8_N,V_K,K,n_reps);
 			}
 			monitor_check_errors(U_K,V_K,K,&n_bit_errors,&n_trames_errors);
 			//if(n_trames_errors > 0){
@@ -344,64 +347,77 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 	free(X_N);
 	free(L_N);
 	free(Y_N);
+	free(L8_N);
 }
 
 
 int main(int argc, char* argv[]){
 	int opt;
-	float m_arg, M_arg, s_arg;
-	bool mod_all_ones;
-	uint e_arg, K_arg, N_arg;
-	std::string D_arg;
-
+	float m_arg = 0, M_arg = 0, s_arg = 1;
+	uint e_arg = 100, K_arg = 32, N_arg = 128;
+	std::string D_arg = "rep-hard";
+	
 	std::string output_filename = "results.csv"; //si pas d'arguments
+	bool mod_all_ones= false;
+	size_t f_quant = 0;
+    size_t s_quant = 8; // Valeur par défaut demandée
+    bool use_quantizer = false;
+	
+	//pour les options longues ("nom", a_un_argument?, flag, code_de_retour)
+    struct option long_options[] = {
+        {"mod-all-ones", no_argument,       0, 'O'}, // Renvoie 'O'
+        {"qf",           required_argument, 0, 'F'}, // Renvoie 'F'
+        {"qs",           required_argument, 0, 'S'}, // Renvoie 'S'
+        {0, 0, 0, 0} // Toujours terminer par des zéros
+    };
 
-	while ((opt = getopt(argc, argv, "m:M:s:e:K:N:D:o:O:")) != -1) {
+	int option_index = 0;
+
+	while ((opt = getopt_long(argc, argv, "m:M:s:e:K:N:D:o:", long_options, &option_index)) != -1) {
 		switch (opt) {
 		case 'm':
 			m_arg = atof(optarg);
-			//std::cout << "la valeur c'est \n" << m_arg << std::endl;
 			break;
 		case 'M':
-			//std::cout << "Option -b selected with value: " << optarg << "\n";
 			M_arg = atof(optarg);
 			break;
 		case 's':
-			//std::cout << "Option -c selected\n";
 			s_arg = atof(optarg);
 			break;
 		case 'e':
-			//std::cout << "Option -c selected\n";
 			e_arg = atoi(optarg);
 			break;
 		case 'K':
-			//std::cout << "Option -c selected\n";
 			K_arg = atoi(optarg);
 			break;
 		case 'N':
-			//std::cout << "Option -c selected\n";
 			N_arg = atoi(optarg);
 			break;
 		case 'D':
-			//std::cout << "Option -c selected\n";
 			D_arg = optarg;
 			break;
 		case 'o':
 		 	output_filename = optarg;
 			break;
-		case 'O':
-		//--mod-all-ones
-			if(optarg ! nullptr){
-				mod_all_ones = true;
-			}else{
-				mod_all_ones = false;
-			}
-			break;
-		case '?':
-			std::cerr << "Unknown option: " << static_cast<char>(optopt) << "\n";
-			break;
-		}
-	}
+		case 'O': 
+            //si getopt_long renvoie 'O' alors --mod-all-ones est présent
+            mod_all_ones = true; 
+            break;
+        case 'F': 
+            //si getopt_long renvoie 'F' alors --qf est présent
+            f_quant = atoi(optarg); 
+            use_quantizer = true; //on doit utiliser la quantification
+            break;
+        case 'S': 
+            //si getopt_long renvoie 'S' alors --qs est présent
+            s_quant = atoi(optarg); 
+            break;
+            
+        case '?':
+            //getopt_long affiche une erreur par défaut
+            break;
+        }
+    }
 	
 	srand(time(NULL));
 
@@ -414,7 +430,7 @@ int main(int argc, char* argv[]){
 	clear_file << "Eb/N0,Es/N0,sigma,be,fe,fn,BER,FER,sim_time_s,time_per_frame_s\n";
 	clear_file.close();
 	
-	montecarlo_simulation(m_arg, M_arg, s_arg, e_arg, K_arg, N_arg, D_arg, output_filename,mod_all_ones);
+	montecarlo_simulation(m_arg, M_arg, s_arg, e_arg, K_arg, N_arg, D_arg, output_filename,mod_all_ones,s_quant,f_quant);
 	auto fin = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(fin - start);
 	std::cout << "ça a pris " << duration.count() << " ms" << std::endl;
