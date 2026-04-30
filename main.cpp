@@ -187,8 +187,70 @@ void append_result(const std::string &filename, float eb_n0, float es_n0, float 
     file.close();
 }
 
+void modem_BPSK_modulate_all_ones(const uint8_t *C_N, int32_t *X_N, size_t N){
+	for (int i = 0; i < N ; i++){
+		X_N[i] = 1;
+	}
+}
 
-void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, uint K_arg, uint N_arg, std::string D_arg,const std::string &filename ){
+// transform numbers from floating-point representation to fixed-point representation
+// `s` is the number of bits used in the quantizer block
+// `f` is the number of bits of the fractional part (`s` >= `f`)
+void quantizer_transform8(const float *L_N, int8_t *L8_N, size_t N, size_t s, size_t f){
+	//verification de s 
+	if (s == 0) return;
+	//clamp s entre [1,8] pour eviter les int8 overflow
+	if (s > 8) s = 8;
+	size_t frac = f;
+	//les valeur min et max
+	int32_t min_val = - (1 << (s - 1));
+	int32_t max_val =  (1 << (s - 1)) - 1;
+	//le scaling
+	float scale = 1.0f;
+	if (frac < 31) scale = (float)(1u << frac);
+
+	for (size_t i = 0; i < N; ++i) {
+		float scaled = L_N[i] * scale;
+		//arondit à l'entier le plus proche
+		long rounded = (long)roundf(scaled);
+		//[min_val, max_val]
+		if (rounded < min_val) rounded = min_val;
+		if (rounded > max_val) rounded = max_val;
+		L8_N[i] = (int8_t)rounded;
+	}
+
+}
+
+// hard decoder: first hard decides each LLR and then makes a majority vote
+void codec_repetition_hard_decode8(const int8_t *L8_N, uint8_t *V_K, size_t K, size_t n_reps){
+	for(size_t i = 0; i < K;i++){
+		int vote = 0;//le buffer qui va stoquer les valeur du vote pour chaque nombre
+		for(size_t j = 0; j < n_reps;j++){
+			if(L8_N[(j*K)+i] >= 0.0f){
+				vote++;
+			}else{
+				vote--;
+			}
+		}
+		V_K[i] = (vote > 0) ? 0 : 1;
+		vote = 0; //remet à 0
+	}
+}
+
+// soft decoder: computes the mean of each LLR to hard decide the bits
+void codec_repetition_soft_decode8(const int8_t *L8_N, uint8_t *V_K, size_t K, size_t n_reps){
+	for(size_t i = 0; i < K;i++){
+		float vote = 0.0f;
+		for(size_t j = 0; j < n_reps;j++){
+			//faut faire la somme des valeurs
+			vote += L8_N[(j*K)+i];
+		}
+		V_K[i] = (vote > 0.0f) ? 0 : 1;
+		vote = 0.0f; //remet à 0
+	}
+}
+
+void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, uint K_arg, uint N_arg, std::string D_arg,const std::string &filename, bool mod_all_ones ){
 	/*
 	-m [min_SNR float] the first included Eb/N0 SNR to simulate (in dB),
 	-M [max_SNR float] the last included Eb/N0 SNR to simulate (in dB),
@@ -233,15 +295,24 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 			nb_simulation++;
 			n_bit_errors = 0;
 			n_trames_errors = 0;
-			source_generate(U_K,K);
-			codec_repetition_encode(U_K,C_N,K,n_reps);
-			modem_BPSK_modulate(C_N,X_N,n_reps * K);
+			if(!mod_all_ones){
+				source_generate(U_K,K);
+				codec_repetition_encode(U_K,C_N,K,n_reps);
+				modem_BPSK_modulate(C_N,X_N,n_reps * K);
+			}else{
+				modem_BPSK_modulate_all_ones(C_N,X_N, n_reps * K);
+			}
 			channel_AWGN_add_noise(X_N,Y_N,K*n_reps,sigma);
 			modem_BPSK_demodulate(Y_N,L_N,K*n_reps,sigma);
 			if(D_arg == "rep-hard"){
 				codec_repetition_hard_decode(L_N,V_K,K,n_reps);
-			}else{
+			}else if(D_arg == "rep-soft"){
 				codec_repetition_soft_decode(L_N,V_K,K,n_reps);
+			}else if(D_arg == "rep-hard8"){
+				codec_repetition_hard_decode8(L_N,V_K,K,n_reps);//probleme L_N est pas int 8
+			}else{
+				//sinon c'est rep-soft8
+				codec_repetition_soft_decode8(L_N,V_K,K,n_reps);//probleme L_N est pas int 8
 			}
 			monitor_check_errors(U_K,V_K,K,&n_bit_errors,&n_trames_errors);
 			//if(n_trames_errors > 0){
@@ -279,12 +350,13 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 int main(int argc, char* argv[]){
 	int opt;
 	float m_arg, M_arg, s_arg;
+	bool mod_all_ones;
 	uint e_arg, K_arg, N_arg;
 	std::string D_arg;
 
 	std::string output_filename = "results.csv"; //si pas d'arguments
 
-	while ((opt = getopt(argc, argv, "m:M:s:e:K:N:D:o:")) != -1) {
+	while ((opt = getopt(argc, argv, "m:M:s:e:K:N:D:o:O:")) != -1) {
 		switch (opt) {
 		case 'm':
 			m_arg = atof(optarg);
@@ -317,6 +389,14 @@ int main(int argc, char* argv[]){
 		case 'o':
 		 	output_filename = optarg;
 			break;
+		case 'O':
+		//--mod-all-ones
+			if(optarg ! nullptr){
+				mod_all_ones = true;
+			}else{
+				mod_all_ones = false;
+			}
+			break;
 		case '?':
 			std::cerr << "Unknown option: " << static_cast<char>(optopt) << "\n";
 			break;
@@ -334,84 +414,9 @@ int main(int argc, char* argv[]){
 	clear_file << "Eb/N0,Es/N0,sigma,be,fe,fn,BER,FER,sim_time_s,time_per_frame_s\n";
 	clear_file.close();
 	
-	montecarlo_simulation(m_arg, M_arg, s_arg, e_arg, K_arg, N_arg, D_arg, output_filename);
+	montecarlo_simulation(m_arg, M_arg, s_arg, e_arg, K_arg, N_arg, D_arg, output_filename,mod_all_ones);
 	auto fin = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(fin - start);
 	std::cout << "ça a pris " << duration.count() << " ms" << std::endl;
 	return 0;
 }
-	//printf("U_K avant :\n");
-	//for(size_t i = 0; i < K; i++){
-	//	printf("%d",U_K[i]);
-	//}
-
-	//printf("\n");
-	
-	//source_generate(U_K,K);
-	
-	//printf("U_K après :\n");
-	//for(size_t i = 0; i < K; i++){
-	//	printf("%d",U_K[i]);
-	//}
-	
-	//printf("\n");
-	//printf("C_N avant :\n");
-	//for(size_t i = 0; i < K * n_reps; i++){
-	//	printf("%d",C_N[i]);
-	//}
-	//codec_repetition_encode(U_K,C_N,K,n_reps);
-
-	//printf("\n");
-	//printf("C_N après :\n");
-	//for(size_t i = 0; i < K * n_reps; i++){
-	//	//std::cout << U_K[i] << std::endl;
-	//	printf("%d",C_N[i]);
-	//}
-	
-	//printf("\n");
-	//printf("X_N avant :\n");
-	//for(size_t i = 0; i < K * n_reps; i++){
-	//	printf("%d",X_N[i]);
-	//}
-	//modem_BPSK_modulate(C_N,X_N,n_reps * K);
-
-	//printf("\n");
-	//printf("X_N après :\n");
-	//for(size_t i = 0; i < K * n_reps; i++){
-	//	printf("%d",X_N[i]);
-	//}
-	//printf("\n");
-
-	//channel_AWGN_add_noise(X_N,Y_N,K*n_reps,sigma);
-
-	//printf("Y_N après :\n");
-	//for(size_t i = 0; i < K * n_reps; i++){
-	//	printf("%f",Y_N[i]);
-	//}
-
-	//printf("\n");
-
-	//modem_BPSK_demodulate(Y_N,L_N,K*n_reps,sigma);
-	
-	//printf("V_N après :\n");
-	//for(size_t i = 0; i < K * n_reps; i++){
-	//	printf("%f",L_N[i]);
-	//}
-
-	//printf("\n");
-
-
-	//codec_repetition_hard_decode(L_N,V_K,K,n_reps);
-	//printf("check des erreurs de hard decode \n");
-	//monitor_check_errors(U_K,V_K,K,&n_bit_errors,&n_trames_errors);
-	//printf("\n");
-	//codec_repetition_soft_decode(L_N,V_K,K,n_reps);
-	//printf("check des erreurs de soft decode \n");
-	//monitor_check_errors(U_K,V_K,K,&n_bit_errors,&n_trames_errors);
-	//free(U_K);
-	//free(C_N);
-	//free(V_K);
-	//free(X_N);
-	//free(L_N);
-	//free(Y_N);
-	
