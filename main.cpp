@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <fstream>
 #include <getopt.h>
+#include <arm_neon.h>//task 6
 
 
 /**
@@ -250,6 +251,73 @@ void codec_repetition_soft_decode8(const int8_t *L8_N, uint8_t *V_K, size_t K, s
 	}
 }
 
+void codec_repetition_soft_decode8_neon(const int8_t *L8_N, uint8_t *V_K, size_t K, size_t n_reps){
+    // On avance de 16 en 16 dans le tableau d'information
+    for(size_t i = 0; i < K; i += 16) {
+        
+        //registre accumulateur (16 valeurs à 0)
+        // vdupq_n_s8 : pour dupliquer une val dans un reg de 128 bits (q) d'entiers signés de 8 bits
+        int8x16_t vote_acc = vdupq_n_s8(0);
+        
+        //somme des rep
+        for(size_t j = 0; j < n_reps; j++) {
+            //index dans L8_N est un peu différent psk data entrelacées
+            //bit num i de la j-eme rep est ici (j * K) + i
+            const int8_t* ptr = &L8_N[(j * K) + i];
+            
+            //load 16 LLRs en oneshot coup depuis la mem vers un reg
+            int8x16_t llr_vec = vld1q_s8(ptr);
+            
+            //add les 16 LLR
+            //!!!si on ajoute 100 + 50, au lieu de déborder et de devenir négatif, ça restera bloqué à 127. selon gemini
+            vote_acc = vqaddq_s8(vote_acc, llr_vec);
+        }
+        
+        //la décision (Soft -> Hard)
+        //Si la somme LLR >= 0, V_K = 0$ si LLR < 0, V_K = 1.
+        uint8x16_t decision_mask = vcltzq_s8(vote_acc);
+        
+        //on veut stocker 1 (au lieu de 0xFF) quand c'est 0> 
+        //vandq_u8 (u8 pour le mask) pour faire un ET logique avec 1
+        // vdupq_n_u8(1) gen un vecteur plein de 1.
+        uint8x16_t ones = vdupq_n_u8(1);
+        uint8x16_t final_decision = vandq_u8(decision_mask, ones);
+        
+        //stock le res en mem
+        //vst1q_u8 ça stocke le contenu du reg de 128 bits à l'@ indique
+        vst1q_u8(&V_K[i], final_decision);
+    }
+}
+
+void codec_repetition_hard_decode8_neon(const int8_t *L8_N, uint8_t *V_K, size_t K, size_t n_reps){
+    for(size_t i = 0; i < K; i += 16) {
+        
+        int8x16_t vote_acc = vdupq_n_s8(0);
+        int8x16_t ones = vdupq_n_s8(1);
+        
+        for(size_t j = 0; j < n_reps; j++) {
+            const int8_t* ptr = &L8_N[(j * K) + i];
+            int8x16_t llr_vec = vld1q_s8(ptr);
+            
+            //mask : 0xFF (-1) si 0>, 0x00 (0) si positif ou nul
+            int8x16_t is_neg_mask = (int8x16_t)vcltzq_s8(llr_vec); 
+            
+            // mask + mask + 1 -> donne -1 ou +1 
+            int8x16_t temp = vaddq_s8(is_neg_mask, is_neg_mask);
+            int8x16_t votes = vaddq_s8(temp, ones);
+            
+            //on accumule les votes
+            vote_acc = vaddq_s8(vote_acc, votes);
+        }
+        
+        //prise de la décision finale comme pour le soft
+        int8x16_t decision_mask = (int8x16_t)vcltzq_s8(vote_acc);
+        int8x16_t final_decision = vandq_s8(decision_mask, ones);
+        
+        vst1q_s8((int8_t*)&V_K[i], final_decision);
+    }
+}
+
 void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, uint K_arg, uint N_arg, std::string D_arg,const std::string &filename, bool mod_all_ones,size_t s_quant,size_t f_quant ){
 	/*
 	-m [min_SNR float] the first included Eb/N0 SNR to simulate (in dB),
@@ -309,6 +377,12 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 				codec_repetition_hard_decode(L_N,V_K,K,n_reps);
 			}else if(D_arg == "rep-soft"){
 				codec_repetition_soft_decode(L_N,V_K,K,n_reps);
+			}else if(D_arg == "rep-hard8-neon"){
+			    quantizer_transform8(L_N, L8_N, K*n_reps, s_quant, f_quant);
+			    codec_repetition_hard_decode8_neon(L8_N, V_K, K, n_reps);
+			}else if(D_arg == "rep-soft8-neon"){
+			    quantizer_transform8(L_N, L8_N, K*n_reps, s_quant, f_quant);
+			    codec_repetition_soft_decode8_neon(L8_N, V_K, K, n_reps);
 			}else if(D_arg == "rep-hard8"){
 				quantizer_transform8(L_N, L8_N, K*n_reps, s_quant, f_quant);
 				codec_repetition_hard_decode8(L8_N,V_K,K,n_reps);
