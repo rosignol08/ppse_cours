@@ -1,5 +1,5 @@
 compile : 
-g++ -Ofast -march=native -flto main.cpp -o simulator
+g++ -std=c++17 -Ofast -DENABLE_STATS -march=native -flto main.cpp -o simulator
 
 on a trouvé que S = 5 et f = 1 donne la meilleur performance sans grande perte 
 ./simulator -m 0 -M 10 -s 1 --mod-all-ones -D "rep-soft8" --qf 1 --qs 5
@@ -16,3 +16,22 @@ SNR : 9 | Ber : 4.25002e-05 | Fer : 0.00136001 | Trames simulees : 73529
 SNR : 10 | Ber : 5.37501e-06 | Fer : 0.000172 | Trames simulees : 581394
 ça a pris 2489 ms
 
+# 1. Référence flottante (32 bits)
+./simulator -m 0 -M 14 -s 1 -e 100 -K 32 -N 8192 -D "rep-hard" -o results_hard_ref.csv
+
+# 2. Version quantifiée (5 bits)
+./simulator -m 0 -M 14 -s 1 -e 100 -K 32 -N 8192 -D "rep-hard8" --qf 1 --qs 5 -o results_hard8.csv
+
+# 3. Version quantifiée + Accélération SIMD NEON
+./simulator -m 0 -M 14 -s 1 -e 100 -K 32 -N 8192 -D "rep-hard8-neon" --qf 1 --qs 5 -o results_hard8_neon.csv
+
+
+# 1. Référence flottante (32 bits)
+./simulator -m 0 -M 11 -s 1 -e 100 --mod-all-ones -K 32 -N 8192 -D "rep-soft" -o results_soft_ref.csv
+
+# 2. Version quantifiée (5 bits)
+./simulator -m 0 -M 11 -s 1 -e 100 --mod-all-ones -K 32 -N 8192 -D "rep-soft8" --qf 1 --qs 5 -o results_soft8.csv
+
+# 3. Version quantifiée + Accélération SIMD NEON
+./simulator -m 0 -M 11 -s 1 -e 100 --mod-all-ones -K 32 -N 8192 -D "rep-soft8-neon" --qf 1 --qs 5 -o results_soft8_neon.csv
+./simulator -m 0 -M 11 -s 1 -e 100 --mod-all-ones -K 32 -N 8192 -D "rep-soft8-neon" --qf 1 --qs 5 -o results_soft8_neon.csv

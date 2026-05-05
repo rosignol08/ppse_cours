@@ -172,7 +172,7 @@ void monitor_check_errors(const uint8_t *U_K, const uint8_t *V_K, size_t K, uint
 
 //faut une fonction pour ajouter les resultats dans un fichier csv
 //j'ai trouvé ça sur internet
-void append_result(const std::string &filename, float eb_n0, float es_n0, float sigma, int be, int fe, int fn, float ber, float fer, double sim_time, double time_per_frame) {
+void append_result(const std::string &filename, float eb_n0, float es_n0, float sigma, int be, int fe, int fn, float ber, float fer, double sim_time, double time_per_frame, float sim_thr) {
     // std::ios::app permet d'ajouter à la fin du fichier sans l'écraser
     std::ofstream file(filename, std::ios::app);
 
@@ -184,7 +184,7 @@ void append_result(const std::string &filename, float eb_n0, float es_n0, float 
     //valeurs ecrites dans le csv
     file << eb_n0 << "," << es_n0 << "," << sigma << "," 
         << be << "," << fe << "," << fn << "," 
-        << ber << "," << fer << "," << sim_time << "," << time_per_frame << "\n";
+        << ber << "," << fer << "," << sim_time << "," << time_per_frame << "," << sim_thr << "\n";
 
     file.close();
 }
@@ -318,7 +318,14 @@ void codec_repetition_hard_decode8_neon(const int8_t *L8_N, uint8_t *V_K, size_t
     }
 }
 
-void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, uint K_arg, uint N_arg, std::string D_arg,const std::string &filename, bool mod_all_ones,size_t s_quant,size_t f_quant ){
+// write only zeros in U_K clement
+void source_generate_all_zeros(uint8_t *U_K, size_t K){
+  for (int i = 0; i < K; i++){
+    U_K[i] = 0;
+  }
+}
+
+void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, uint K_arg, uint N_arg, std::string D_arg,const std::string &filename, bool mod_all_ones,size_t s_quant,size_t f_quant, int src_all_zeros){
 	/*
 	-m [min_SNR float] the first included Eb/N0 SNR to simulate (in dB),
 	-M [max_SNR float] the last included Eb/N0 SNR to simulate (in dB),
@@ -348,8 +355,45 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 	float Fer = 0.0f;
 	uint64_t n_bit_errors = 0;
 	uint64_t n_trames_errors = 0;
+	float sim_thr = 0.0f;
 	// l'algo de monte carlo qui fait le lancement en boucle du programme
 	int nb_erreurs, nb_bits_erreurs, nb_simulation;
+
+	#ifdef ENABLE_STATS
+	enum BlockId {
+		BLOCK_SOURCE = 0,
+		BLOCK_ENCODER = 1,
+		BLOCK_MODULATOR = 2,
+		BLOCK_CHANNEL = 3,
+		BLOCK_DEMODULATOR = 4,
+		BLOCK_MONITOR = 5,
+		BLOCK_COUNT = 6
+	};
+
+	const char *block_labels[BLOCK_COUNT] = {
+		"Source generate",
+		"Encoder",
+		"Modulator",
+		"Channel",
+		"Demodulator",
+		"Monitor"
+	};
+
+	double total_duration[BLOCK_COUNT] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+	double min_duration[BLOCK_COUNT] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+	double max_duration[BLOCK_COUNT] = {-1.0, -1.0, -1.0, -1.0, -1.0, -1.0};
+	size_t block_calls[BLOCK_COUNT] = {0, 0, 0, 0, 0, 0};
+
+	auto record_block = [&](int block,
+				const std::chrono::high_resolution_clock::time_point &start,
+				const std::chrono::high_resolution_clock::time_point &end) {
+		double duration_ms = std::chrono::duration<double, std::milli>(end - start).count();
+		total_duration[block] += duration_ms;
+		block_calls[block]++;
+		if(max_duration[block] < duration_ms || max_duration[block] < 0.0) max_duration[block] = duration_ms;
+		if(min_duration[block] > duration_ms || min_duration[block] == 0.0) min_duration[block] = duration_ms;
+	};
+	#endif
 	for(float i = m_arg; i <= M_arg; i += s_arg){
 		auto start_snr = std::chrono::high_resolution_clock::now(); //debut mesure
 		nb_bits_erreurs = 0;
@@ -364,15 +408,64 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 			nb_simulation++;
 			n_bit_errors = 0;
 			n_trames_errors = 0;
+
 			if(!mod_all_ones){
-				source_generate(U_K,K);
+				#ifdef ENABLE_STATS
+				auto source_start = std::chrono::high_resolution_clock::now();
+				#endif
+				if (src_all_zeros) source_generate_all_zeros(U_K, K);
+      			else source_generate(U_K, K);
+				#ifdef ENABLE_STATS
+				auto source_end = std::chrono::high_resolution_clock::now();
+				record_block(BLOCK_SOURCE, source_start, source_end);
+				#endif
+
+				#ifdef ENABLE_STATS
+				auto encoder_start = std::chrono::high_resolution_clock::now();
+				#endif
 				codec_repetition_encode(U_K,C_N,K,n_reps);
+				#ifdef ENABLE_STATS
+				auto encoder_end = std::chrono::high_resolution_clock::now();
+				record_block(BLOCK_ENCODER, encoder_start, encoder_end);
+				#endif
+
+				#ifdef ENABLE_STATS
+				auto modulator_start = std::chrono::high_resolution_clock::now();
+				#endif
 				modem_BPSK_modulate(C_N,X_N,n_reps * K);
+				#ifdef ENABLE_STATS
+				auto modulator_end = std::chrono::high_resolution_clock::now();
+				record_block(BLOCK_MODULATOR, modulator_start, modulator_end);
+				#endif
 			}else{
+				#ifdef ENABLE_STATS
+				auto modulator_start = std::chrono::high_resolution_clock::now();
+				#endif
 				modem_BPSK_modulate_all_ones(C_N,X_N, n_reps * K);
+				#ifdef ENABLE_STATS
+				auto modulator_end = std::chrono::high_resolution_clock::now();
+				record_block(BLOCK_MODULATOR, modulator_start, modulator_end);
+				#endif
 			}
+
+			#ifdef ENABLE_STATS
+			auto channel_start = std::chrono::high_resolution_clock::now();
+			#endif
 			channel_AWGN_add_noise(X_N,Y_N,K*n_reps,sigma);
+			#ifdef ENABLE_STATS
+			auto channel_end = std::chrono::high_resolution_clock::now();
+			record_block(BLOCK_CHANNEL, channel_start, channel_end);
+			#endif
+
+			#ifdef ENABLE_STATS
+			auto demodulator_start = std::chrono::high_resolution_clock::now();
+			#endif
 			modem_BPSK_demodulate(Y_N,L_N,K*n_reps,sigma);
+			#ifdef ENABLE_STATS
+			auto demodulator_end = std::chrono::high_resolution_clock::now();
+			record_block(BLOCK_DEMODULATOR, demodulator_start, demodulator_end);
+			#endif
+
 			if(D_arg == "rep-hard"){
 				codec_repetition_hard_decode(L_N,V_K,K,n_reps);
 			}else if(D_arg == "rep-soft"){
@@ -391,7 +484,16 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 				quantizer_transform8(L_N, L8_N, K*n_reps, s_quant, f_quant);
 				codec_repetition_soft_decode8(L8_N,V_K,K,n_reps);
 			}
+
+			#ifdef ENABLE_STATS
+			auto monitor_start = std::chrono::high_resolution_clock::now();
+			#endif
 			monitor_check_errors(U_K,V_K,K,&n_bit_errors,&n_trames_errors);
+			#ifdef ENABLE_STATS
+			auto monitor_end = std::chrono::high_resolution_clock::now();
+			record_block(BLOCK_MONITOR, monitor_start, monitor_end);
+			#endif
+
 			//if(n_trames_errors > 0){
 			nb_erreurs+= n_trames_errors;
 			//}
@@ -404,16 +506,65 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 		Fer = (float)nb_erreurs / nb_simulation;
 		//std::cout << "Ber : " << Ber << std::endl;
 		//std::cout << "Fer : " << Fer << std::endl;
-		
-		std::cout << "SNR : " << i << " | Ber : " << Ber << " | Fer : " << Fer << " | Trames simulees : " << nb_simulation << std::endl;
-
 		auto end_snr = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> diff = end_snr - start_snr;
-        double sim_time = diff.count(); //temps total pour ce SNR (en secondes)
-        double time_per_frame = sim_time / nb_simulation; //temps moyen par trame
+		std::chrono::duration<double, std::milli> diff = end_snr - start_snr;
+		double sim_time = diff.count(); //temps total pour ce SNR (en millisecondes)
+		double time_per_frame = sim_time / nb_simulation; //temps moyen par trame en millisecondes
+		sim_thr = (nb_simulation * K) / (sim_time * 1e3); //débit de simulation en Mbps
+
+		std::cout << "SNR : " << i << " | Ber : " << Ber << " | Fer : " << Fer << " | Trames simulees : " << nb_simulation << " | Sim_thr : " << sim_thr << " Mbps" << std::endl;
 
 		//ça ajoute les résultats dans le fichier à chaque itération
-		append_result(filename, i, snr_symb, sigma, nb_bits_erreurs, nb_erreurs, nb_simulation, Ber, Fer, sim_time, time_per_frame);
+		append_result(filename, i, snr_symb, sigma, nb_bits_erreurs, nb_erreurs, nb_simulation, Ber, Fer, sim_time, time_per_frame, sim_thr);
+
+		#ifdef ENABLE_STATS
+		double avg_duration[BLOCK_COUNT] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+		double percent_duration[BLOCK_COUNT] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+		double throughput[BLOCK_COUNT] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+		double output_bits[BLOCK_COUNT] = {
+			(double)nb_simulation * (double)K,
+			(double)nb_simulation * (double)(K * n_reps),
+			(double)nb_simulation * (double)(K * n_reps),
+			(double)nb_simulation * (double)(K * n_reps),
+			(double)nb_simulation * (double)(K * n_reps),
+			(double)nb_simulation * (double)K
+		};
+
+		for(int block = 0; block < BLOCK_COUNT; ++block){
+			if(block_calls[block] > 0){
+				avg_duration[block] = total_duration[block] / (double)block_calls[block];
+				throughput[block] = (output_bits[block] / total_duration[block]) * 1e-3;
+			}
+			if(sim_time > 0.0){
+				percent_duration[block] = (total_duration[block] / sim_time) * 100.0;
+			}
+		}
+
+		std::cout << "----- Stats de SNR=" << i << " -----" << std::endl;
+		std::cout << "-- Temps totale --" << std::endl;
+		std::cout << "NB de bits transféré: " << (K * nb_simulation) << " bits" << std::endl;
+		std::cout << "Durée totale: " << sim_time << " ms" << std::endl;
+		std::cout << "Durée moyenne: " << time_per_frame << " ms" << std::endl;
+		std::cout << "Throughput de la communication: " << sim_thr << " Mbps" << std::endl;
+		std::cout << std::endl;
+
+		for(int block = 0; block < BLOCK_COUNT; ++block){
+			std::cout << "-- " << block_labels[block] << " --" << std::endl;
+			std::cout << "Durée moyenne: " << avg_duration[block] << " ms" << std::endl;
+			std::cout << "Durée minimum: " << min_duration[block] << " ms" << std::endl;
+			std::cout << "Durée maximum: " << max_duration[block] << " ms" << std::endl;
+			std::cout << "Throughput moyen : " << throughput[block] << " Mbps" << std::endl;
+			std::cout << "Pourcentage de la durée: " << percent_duration[block] << " %" << std::endl;
+			std::cout << std::endl;
+		}
+
+		for(int block = 0; block < BLOCK_COUNT; ++block){
+			total_duration[block] = 0.0;
+			min_duration[block] = 0.0;
+			max_duration[block] = -1.0;
+			block_calls[block] = 0;
+		}
+		#endif
 	}
 	free(U_K);
 	free(C_N);
@@ -426,7 +577,7 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 
 
 int main(int argc, char* argv[]){
-	int opt;
+	int opt,src_all_zeros=0;
 	float m_arg = 0, M_arg = 0, s_arg = 1;
 	uint e_arg = 100, K_arg = 32, N_arg = 128;
 	std::string D_arg = "rep-hard";
@@ -486,7 +637,6 @@ int main(int argc, char* argv[]){
             //si getopt_long renvoie 'S' alors --qs est présent
             s_quant = atoi(optarg); 
             break;
-            
         case '?':
             //getopt_long affiche une erreur par défaut
             break;
@@ -501,10 +651,10 @@ int main(int argc, char* argv[]){
 	//std::string output_filename = "results.csv";
 
 	std::ofstream clear_file(output_filename);
-	clear_file << "Eb/N0,Es/N0,sigma,be,fe,fn,BER,FER,sim_time_s,time_per_frame_s\n";
+	clear_file << "Eb/N0,Es/N0,sigma,be,fe,fn,BER,FER,sim_time_s,time_per_frame_s,Sim_thr_Mbps\n";
 	clear_file.close();
 	
-	montecarlo_simulation(m_arg, M_arg, s_arg, e_arg, K_arg, N_arg, D_arg, output_filename,mod_all_ones,s_quant,f_quant);
+	montecarlo_simulation(m_arg, M_arg, s_arg, e_arg, K_arg, N_arg, D_arg, output_filename,mod_all_ones,s_quant,f_quant, src_all_zeros);
 	auto fin = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(fin - start);
 	std::cout << "ça a pris " << duration.count() << " ms" << std::endl;
