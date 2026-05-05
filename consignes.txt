@@ -1,14 +1,14 @@
 compile : 
 g++ -std=c++17 -Ofast -DENABLE_STATS -march=native -flto main.cpp -o simulator
 
-on a trouvé que S = 5 et f = 1 donne la meilleur performance sans grande perte 
+on a trouvé que S = 5 et f = 1 donne la meilleur performance sans grande perte pour les Soft
 
 
 Pour le groupe "Soft" :
 Les courbes rouge (Soft ref), verte (Soft 8) et orange (Soft 8 neon) se superposent presque exactement donc les valeur ne sont pas fausses.
 Ducoup la quantification et l'accélération vectorielle n'ont pas dégradés la qualité de correction d'erreurs.
 
-
-Pour le groupe "Hard" (Problème) :
-La courbe bleue (Hard ref) descend normalement, mais les courbes bleu marine (Hard 8) et cyan (Hard 8 neon) restent bloquées tout en haut du graphique avec un FER de $10^0$ (soit 100% d'erreurs). Cela indique un bug : ton décodeur dur quantifié ne fonctionne pas (il vote probablement toujours pour la mauvaise valeur,
- peut-être un souci d'inversion de signe dans ta quantification quand tu n'utilises pas --mod-all-ones).
+Pour le groupe "Hard" :
+les deux implémentations 8-bits (scalaire et NEON) sont superposées.
+On observe un écart d'environ 1.5 dB à 2 dB avec la référence flottante (bleu). Le décalage est surement dû à l'arrondi à zéro des faibles valeurs de bruit en virgule fixe,
+mais la cohérence du groupe est totalement respectée.
