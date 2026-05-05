@@ -2,36 +2,13 @@ compile :
 g++ -std=c++17 -Ofast -DENABLE_STATS -march=native -flto main.cpp -o simulator
 
 on a trouvé que S = 5 et f = 1 donne la meilleur performance sans grande perte 
-./simulator -m 0 -M 10 -s 1 --mod-all-ones -D "rep-soft8" --qf 1 --qs 5
-SNR : 0 | Ber : 0.0910714 | Fer : 0.952381 | Trames simulees : 105
-SNR : 1 | Ber : 0.0741477 | Fer : 0.909091 | Trames simulees : 110
-SNR : 2 | Ber : 0.046371 | Fer : 0.806452 | Trames simulees : 124
-SNR : 3 | Ber : 0.023478 | Fer : 0.518135 | Trames simulees : 193
-SNR : 4 | Ber : 0.0147429 | Fer : 0.403226 | Trames simulees : 248
-SNR : 5 | Ber : 0.00667892 | Fer : 0.196078 | Trames simulees : 510
-SNR : 6 | Ber : 0.00280379 | Fer : 0.087108 | Trames simulees : 1148
-SNR : 7 | Ber : 0.000903076 | Fer : 0.0286123 | Trames simulees : 3495
-SNR : 8 | Ber : 0.000261835 | Fer : 0.00837872 | Trames simulees : 11935
-SNR : 9 | Ber : 4.25002e-05 | Fer : 0.00136001 | Trames simulees : 73529
-SNR : 10 | Ber : 5.37501e-06 | Fer : 0.000172 | Trames simulees : 581394
-ça a pris 2489 ms
-
-# 1. Référence flottante (32 bits)
-./simulator -m 0 -M 14 -s 1 -e 100 -K 32 -N 8192 -D "rep-hard" -o results_hard_ref.csv
-
-# 2. Version quantifiée (5 bits)
-./simulator -m 0 -M 14 -s 1 -e 100 -K 32 -N 8192 -D "rep-hard8" --qf 1 --qs 5 -o results_hard8.csv
-
-# 3. Version quantifiée + Accélération SIMD NEON
-./simulator -m 0 -M 14 -s 1 -e 100 -K 32 -N 8192 -D "rep-hard8-neon" --qf 1 --qs 5 -o results_hard8_neon.csv
 
 
-# 1. Référence flottante (32 bits)
-./simulator -m 0 -M 11 -s 1 -e 100 --mod-all-ones -K 32 -N 8192 -D "rep-soft" -o results_soft_ref.csv
+Pour le groupe "Soft" :
+Les courbes rouge (Soft ref), verte (Soft 8) et orange (Soft 8 neon) se superposent presque exactement donc les valeur ne sont pas fausses.
+Ducoup la quantification et l'accélération vectorielle n'ont pas dégradés la qualité de correction d'erreurs.
 
-# 2. Version quantifiée (5 bits)
-./simulator -m 0 -M 11 -s 1 -e 100 --mod-all-ones -K 32 -N 8192 -D "rep-soft8" --qf 1 --qs 5 -o results_soft8.csv
 
-# 3. Version quantifiée + Accélération SIMD NEON
-./simulator -m 0 -M 11 -s 1 -e 100 --mod-all-ones -K 32 -N 8192 -D "rep-soft8-neon" --qf 1 --qs 5 -o results_soft8_neon.csv
-./simulator -m 0 -M 11 -s 1 -e 100 --mod-all-ones -K 32 -N 8192 -D "rep-soft8-neon" --qf 1 --qs 5 -o results_soft8_neon.csv
+Pour le groupe "Hard" (Problème) :
+La courbe bleue (Hard ref) descend normalement, mais les courbes bleu marine (Hard 8) et cyan (Hard 8 neon) restent bloquées tout en haut du graphique avec un FER de $10^0$ (soit 100% d'erreurs). Cela indique un bug : ton décodeur dur quantifié ne fonctionne pas (il vote probablement toujours pour la mauvaise valeur,
+ peut-être un souci d'inversion de signe dans ta quantification quand tu n'utilises pas --mod-all-ones).

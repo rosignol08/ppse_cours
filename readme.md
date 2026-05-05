@@ -1,0 +1,1 @@
+faut lire le ficheir consignes.txt pour les detail sur le lancement du programme 

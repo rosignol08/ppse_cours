@@ -275,17 +275,18 @@ void codec_repetition_soft_decode8_neon(const int8_t *L8_N, uint8_t *V_K, size_t
         
         //la décision (Soft -> Hard)
         //Si la somme LLR >= 0, V_K = 0$ si LLR < 0, V_K = 1.
-        uint8x16_t decision_mask = vcltzq_s8(vote_acc);
+        uint8x16_t decision_mask_u8 = vcltzq_s8(vote_acc);
         
         //on veut stocker 1 (au lieu de 0xFF) quand c'est 0> 
         //vandq_u8 (u8 pour le mask) pour faire un ET logique avec 1
         // vdupq_n_u8(1) gen un vecteur plein de 1.
-        uint8x16_t ones = vdupq_n_u8(1);
-        uint8x16_t final_decision = vandq_u8(decision_mask, ones);
+        int8x16_t decision_mask = (int8x16_t)decision_mask_u8;
+		int8x16_t ones = vdupq_n_s8(1);
+        int8x16_t final_decision = vandq_s8(decision_mask, ones);
         
         //stock le res en mem
         //vst1q_u8 ça stocke le contenu du reg de 128 bits à l'@ indique
-        vst1q_u8(&V_K[i], final_decision);
+        vst1q_s8((int8_t*)&V_K[i], final_decision);
     }
 }
 
