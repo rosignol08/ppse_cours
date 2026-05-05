@@ -308,7 +308,7 @@ void codec_repetition_hard_decode8_neon(const int8_t *L8_N, uint8_t *V_K, size_t
             int8x16_t votes = vaddq_s8(temp, ones);
             
             //on accumule les votes
-            vote_acc = vaddq_s8(vote_acc, votes);
+            vote_acc = vqaddq_s8(vote_acc, votes);
         }
         
         //prise de la décision finale comme pour le soft
