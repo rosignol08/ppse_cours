@@ -1,32 +1,4 @@
-#include <stdio.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <iostream>
-#include <random>
-#include <ctime>
-#include <chrono>
-
-#include <unistd.h>
-#include <fstream>
-#include <getopt.h>
-#include <arm_neon.h>//task 6
-
-
-/**
- * @brief Simule la source d'information. Elle doit remplir un tableau de bits aléatoires.
- *
- * La fonction genère K bits aléatoires (0 ou 1) et les stoques dans le tampon U_K.
- * Sert de message source dans le systeme de communication.
- *
- * @param U_K Pointeur vers un tampon/buffer où les bits générés vont etre stoqués.
- *            le tampons doit avoir une allocation d'au moin K bytes.
- * @param K   Le nombre de bits d'information à generer (la taille du message).
- *
- * @note Cette fonction utilise un generateur pseudo aléatoire (PRNG) pour generer des bits.
- *       rand() % 2 sera utilisé ici.
- *
- * @return void
- */
+#include "fonctions.h"
 void source_generate(uint8_t * U_K, size_t K){
 	//check de Securitée
 	//if(sizeof(U_K)<K){
@@ -44,17 +16,7 @@ void source_generate(uint8_t * U_K, size_t K){
 	}
 }
 
-// read from the buffer U_K and write into the buffer C_N
-/**
- * @brief code à repetition.
- *
- * on repete l'envoie du message
- *
- * @param U_K Pointeur vers un tampon/buffer où les bits du message sont stoqués.
- * @param n_reps   Le nombre de repetition du message(le nombre de fois qu'on copie U_K dans C_N).
- *
- * @return void
- */
+
 void codec_repetition_encode(const uint8_t *U_K, uint8_t *C_N, size_t K, size_t n_reps){
 	for(size_t i = 0; i<K*n_reps;i++){
 		C_N[i] = U_K[i%K];
@@ -62,19 +24,6 @@ void codec_repetition_encode(const uint8_t *U_K, uint8_t *C_N, size_t K, size_t 
 	return;
 }
 
-// read from C_N, write into X_N
-/**
- * @brief change les 0 en +1 et 1 en -1.
- *
- * on prépare les valeurs symboliques. 
- * Le BPSK (Binary Phase-Shift Keying) transforme les bits en niveaux de tension.
- *
- * @param C_K Pointeur vers un tampon/buffer où les bits du message sont stoqués.
- * @param X_N Le resultat de la transformation.
- * @param N taille de C_K
- *
- * @return void
- */
 void modem_BPSK_modulate(const uint8_t *C_N, int32_t *X_N, size_t N){
 	for(size_t i = 0; i < N; i++){
 		if(C_N[i] == 0){
@@ -86,9 +35,6 @@ void modem_BPSK_modulate(const uint8_t *C_N, int32_t *X_N, size_t N){
 }
 
 
-/* add white Gaussian noise
-cette fonction prend des X et renvoie des Y = X+N N etant le bruit
-*/
 void channel_AWGN_add_noise(const int32_t *X_N, float *Y_N, size_t N, float sigma){
 	static std::default_random_engine generator(std::chrono::system_clock::now().time_since_epoch().count());
 	std::normal_distribution<double> distribution(0.0, sigma);
@@ -97,7 +43,7 @@ void channel_AWGN_add_noise(const int32_t *X_N, float *Y_N, size_t N, float sigm
 		Y_N[i] = (float)X_N[i] + distribution(generator);
 	}
 }
-// demodulator, convertit les symboles reçus en LLR
+
 void modem_BPSK_demodulate(const float *Y_N, float *L_N, size_t N, float sigma){
 	/*
 	LLR exact pour canal AWGN et BPSK (+1/-1) :
@@ -112,7 +58,6 @@ void modem_BPSK_demodulate(const float *Y_N, float *L_N, size_t N, float sigma){
 	return;
 }
 
-// hard decoder: first hard decides each LLR and then makes a majority vote
 void codec_repetition_hard_decode(const float *L_N, uint8_t *V_K, size_t K, size_t n_reps){
 	for(size_t i = 0; i < K;i++){
 		int vote = 0;//le buffer qui va stoquer les valeur du vote pour chaque nombre
@@ -128,7 +73,7 @@ void codec_repetition_hard_decode(const float *L_N, uint8_t *V_K, size_t K, size
 		vote = 0; //remet à 0
 	}
 }
-// soft decoder: computes the mean of each LLR to hard decide the bits
+
 void codec_repetition_soft_decode(const float *L_N, uint8_t *V_K, size_t K, size_t n_reps){
 	for(size_t i = 0; i < K;i++){
 		float vote = 0.0f;
@@ -143,19 +88,6 @@ void codec_repetition_soft_decode(const float *L_N, uint8_t *V_K, size_t K, size
 }
 
 
-// update `n_bit_errors` and `n_frame_errors` variables depending on `U_K` and `V_K`
-
-/*
-Il calcule le nombre de trames erronée notée Fe
-permet de définir le taux d’erreurs trames c’est sur le nombre totales de trames transmisses le nombre de trames erronées.
-Be = bit erronée
-Fn le nombre de trames tout cours.
-FER = Fe/Fn
-Bit error rate = Be/ (nombre totales de trames transmises Fn * K)
-(K nombre de bits d’information)
-
-*/
-//n_bit_errorsça fait K taille et n_frame_errors ça fait n_reps taille
 void monitor_check_errors(const uint8_t *U_K, const uint8_t *V_K, size_t K, uint64_t *n_bit_errors, uint64_t *n_frame_errors){
 	bool frame_error = false; //obligé de faire un booleen psk si jai 2 bit faux c'est 1 trame fausse
 	for(size_t i = 0; i<K;i++){
@@ -170,8 +102,6 @@ void monitor_check_errors(const uint8_t *U_K, const uint8_t *V_K, size_t K, uint
 	//std::cout <<"il y a : " << *n_bit_errors << " erreurs et "<< *n_frame_errors << " trames fausses "<< std::endl;
 }
 
-//faut une fonction pour ajouter les resultats dans un fichier csv
-//j'ai trouvé ça sur internet
 void append_result(const std::string &filename, float eb_n0, float es_n0, float sigma, int be, int fe, int fn, float ber, float fer, double sim_time, double time_per_frame, float sim_thr) {
     // std::ios::app permet d'ajouter à la fin du fichier sans l'écraser
     std::ofstream file(filename, std::ios::app);
@@ -189,15 +119,7 @@ void append_result(const std::string &filename, float eb_n0, float es_n0, float 
     file.close();
 }
 
-void modem_BPSK_modulate_all_ones(const uint8_t *C_N, int32_t *X_N, size_t N){
-	for (int i = 0; i < N ; i++){
-		X_N[i] = 1;
-	}
-}
 
-// transform numbers from floating-point representation to fixed-point representation
-// `s` is the number of bits used in the quantizer block
-// `f` is the number of bits of the fractional part (`s` >= `f`)
 void quantizer_transform8(const float *L_N, int8_t *L8_N, size_t N, size_t s, size_t f){
 	//verification de s 
 	if (s == 0) return;
@@ -222,7 +144,6 @@ void quantizer_transform8(const float *L_N, int8_t *L8_N, size_t N, size_t s, si
 
 }
 
-// hard decoder: first hard decides each LLR and then makes a majority vote
 void codec_repetition_hard_decode8(const int8_t *L8_N, uint8_t *V_K, size_t K, size_t n_reps){
 	for(size_t i = 0; i < K;i++){
 		int vote = 0;//le buffer qui va stoquer les valeur du vote pour chaque nombre
@@ -238,7 +159,6 @@ void codec_repetition_hard_decode8(const int8_t *L8_N, uint8_t *V_K, size_t K, s
 	}
 }
 
-// soft decoder: computes the mean of each LLR to hard decide the bits
 void codec_repetition_soft_decode8(const int8_t *L8_N, uint8_t *V_K, size_t K, size_t n_reps){
 	for(size_t i = 0; i < K;i++){
 		float vote = 0.0f;
@@ -319,7 +239,6 @@ void codec_repetition_hard_decode8_neon(const int8_t *L8_N, uint8_t *V_K, size_t
     }
 }
 
-// write only zeros in U_K clement
 void source_generate_all_zeros(uint8_t *U_K, size_t K){
   for (int i = 0; i < K; i++){
     U_K[i] = 0;
@@ -577,87 +496,3 @@ void montecarlo_simulation( float m_arg, float M_arg, float s_arg, uint e_arg, u
 }
 
 
-int main(int argc, char* argv[]){
-	int opt,src_all_zeros=0;
-	float m_arg = 0, M_arg = 0, s_arg = 1;
-	uint e_arg = 100, K_arg = 32, N_arg = 128;
-	std::string D_arg = "rep-hard";
-	
-	std::string output_filename = "results.csv"; //si pas d'arguments
-	bool mod_all_ones= false;
-	size_t f_quant = 0;
-    size_t s_quant = 8; // Valeur par défaut demandée
-    bool use_quantizer = false;
-	
-	//pour les options longues ("nom", a_un_argument?, flag, code_de_retour)
-    struct option long_options[] = {
-        {"mod-all-ones", no_argument,       0, 'O'}, // Renvoie 'O'
-        {"qf",           required_argument, 0, 'F'}, // Renvoie 'F'
-        {"qs",           required_argument, 0, 'S'}, // Renvoie 'S'
-        {0, 0, 0, 0} // Toujours terminer par des zéros
-    };
-
-	int option_index = 0;
-
-	while ((opt = getopt_long(argc, argv, "m:M:s:e:K:N:D:o:", long_options, &option_index)) != -1) {
-		switch (opt) {
-		case 'm':
-			m_arg = atof(optarg);
-			break;
-		case 'M':
-			M_arg = atof(optarg);
-			break;
-		case 's':
-			s_arg = atof(optarg);
-			break;
-		case 'e':
-			e_arg = atoi(optarg);
-			break;
-		case 'K':
-			K_arg = atoi(optarg);
-			break;
-		case 'N':
-			N_arg = atoi(optarg);
-			break;
-		case 'D':
-			D_arg = optarg;
-			break;
-		case 'o':
-		 	output_filename = optarg;
-			break;
-		case 'O': 
-            //si getopt_long renvoie 'O' alors --mod-all-ones est présent
-            mod_all_ones = true; 
-            break;
-        case 'F': 
-            //si getopt_long renvoie 'F' alors --qf est présent
-            f_quant = atoi(optarg); 
-            use_quantizer = true; //on doit utiliser la quantification
-            break;
-        case 'S': 
-            //si getopt_long renvoie 'S' alors --qs est présent
-            s_quant = atoi(optarg); 
-            break;
-        case '?':
-            //getopt_long affiche une erreur par défaut
-            break;
-        }
-    }
-	
-	srand(time(NULL));
-
-	auto start = std::chrono::high_resolution_clock::now();
-	
-
-	//std::string output_filename = "results.csv";
-
-	std::ofstream clear_file(output_filename);
-	clear_file << "Eb/N0,Es/N0,sigma,be,fe,fn,BER,FER,sim_time_s,time_per_frame_s,Sim_thr_Mbps\n";
-	clear_file.close();
-	
-	montecarlo_simulation(m_arg, M_arg, s_arg, e_arg, K_arg, N_arg, D_arg, output_filename,mod_all_ones,s_quant,f_quant, src_all_zeros);
-	auto fin = std::chrono::high_resolution_clock::now();
-	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(fin - start);
-	std::cout << "ça a pris " << duration.count() << " ms" << std::endl;
-	return 0;
-}
