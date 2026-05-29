@@ -46,7 +46,7 @@ void modem_BPSK_modulate_vectorisee_neon_task2(const uint8_t *C_N, int32_t *X_N,
     //int32x4_t v_c;
     //int8x16_t octet;
     //4 elem par iteration
-    for (; j <= N - 8; j += 8, i++) {
+    for (; j + 8 <= N; j += 8, i++) {
         uint8_t octet = C_N[i];
         
         //load dans un reg 32 bits avec vset_lane 
@@ -106,7 +106,7 @@ void modem_BPSK_demodulate_neon(const float *Y_N, float *L_N, size_t N, float si
     float32x4_t v_facteur = vdupq_n_f32(facteur);
 
     //4 floats par iteration
-    for (; i <= N - 4; i += 4) {
+    for (; i + 4 <= N; i += 4) {
         
         //load des 4 floats depuis tab Y_N
         float32x4_t v_y = vld1q_f32(&Y_N[i]);
@@ -184,7 +184,7 @@ void monitor_check_errors_neon_task2(const uint8_t *U_K, const uint8_t *V_K, siz
     uint8_t T[16];
     
     //16 octets par 16
-    for (; i <= K/8 - 16; i += 16) {
+    for (; i + 16 <= K/8 ; i += 16) {
         //load les donness
         uint8x16_t u = vld1q_u8(&U_K[i]);
         uint8x16_t v = vld1q_u8(&V_K[i]);
@@ -293,7 +293,7 @@ void codec_repetition_soft_decode8_neon_task2(const int8_t *L8_N, uint8_t *V_K, 
     int8x16_t v_un = vdupq_n_s8(1);
     
     //16 elem par iteration
-    for(; i <= K - 16; i += 16) {
+    for(; i + 16 <= K; i += 16) {
         int8x16_t vote_acc = vdupq_n_s8(0);
         
         //somme des rep
@@ -344,7 +344,7 @@ void codec_repetition_hard_decode8_neon_task2(const int8_t *L8_N, uint8_t *V_K, 
     int8x16_t v_un = vdupq_n_s8(1);
     
     //16 elem par iteration
-    for(; i <= K - 16; i += 16) {
+    for(; i + 16 <= K; i += 16) {
         int8x16_t vote_acc = vdupq_n_s8(0);
         
         //somme des rep
@@ -453,7 +453,7 @@ void codec_repetition_soft_decode_task2(const float *L_N, uint8_t *V_K, size_t K
     }
 }
 
-void montecarlo_simulation_task2(float m_arg, float M_arg, float s_arg, uint e_arg, uint K_arg, uint N_arg, std::string D_arg,const std::string &filename, bool mod_all_ones,size_t s_quant,size_t f_quant, bool src_all_zeros){
+void montecarlo_simulation_task2(float m_arg, float M_arg, float s_arg, uint e_arg, uint K_arg, uint N_arg, std::string D_arg,const std::string &filename, bool mod_all_ones,size_t s_quant,size_t f_quant, int src_all_zeros){
 	/*
 	-m [min_SNR float] the first included Eb/N0 SNR to simulate (in dB),
 	-M [max_SNR float] the last included Eb/N0 SNR to simulate (in dB),
@@ -611,3 +611,174 @@ void montecarlo_simulation_task2(float m_arg, float M_arg, float s_arg, uint e_a
 	}
 }
 
+
+///task 2 test
+void source_generate_task2(uint8_t * U_K, size_t K){
+	//aulieu de 1 ou 0 par case du tableau on gen 8 bit random et tout mettre dans un uint8
+	for(size_t i = 0; i < K/8;++i){
+		U_K[i] = rand() % 256;//ça genere un nombre entre  0 et 255 donc 0000 0000 et 1111 1111 sur 8 bit
+	}
+}
+
+
+void codec_repetition_encode_task2(const uint8_t *U_K, uint8_t *C_N, size_t K, size_t n_reps){
+	//aulieu de lire les cases on lit les bit des K/8 cases
+	for(size_t j = 0; j < n_reps; j++) {
+        for(size_t i = 0; i < (K/8); i++) {
+            //i avance a chaque trame (j * (K/8))
+            C_N[(j * (K/8)) + i] = U_K[i];
+        }
+    }
+	return;
+}
+
+//thread
+Args_comm_chain init_args_comm_chain(size_t K, size_t N, float sigma, std::string decode_method, bool src_all_zeros, bool mod_all_ones, size_t s_quant, size_t f_quant, std::atomic<int> *n_bit_errors, std::atomic<int> *n_trames_errors, std::atomic<int> *nb_simulation, int n_max_errors){
+	Args_comm_chain args;
+	args.K = K;
+	args.N = N;
+	args.sigma = sigma;
+	args.decode_method = decode_method;
+	args.src_all_zeros = src_all_zeros;
+	args.mod_all_ones = mod_all_ones;
+	args.s_quant = s_quant;
+	args.f_quant = f_quant;
+	args.n_bit_errors = n_bit_errors;
+	args.n_trames_errors = n_trames_errors;
+	args.nb_simulation = nb_simulation;
+	args.n_max_errors = n_max_errors;
+	return args;
+}
+
+void* communication_chain(void* args_void){
+	Args_comm_chain* args = (Args_comm_chain*) args_void;
+	size_t K = args->K;
+	size_t N = args->N;
+	float sigma = args->sigma;
+	std::string decode_method = args->decode_method;
+	bool src_all_zeros = args->src_all_zeros;
+	bool mod_all_ones = args->mod_all_ones;
+	size_t s_quant = args->s_quant;
+	size_t f_quant = args->f_quant;
+	std::atomic<int> *n_bit_errors = args->n_bit_errors;
+	std::atomic<int> *n_trames_errors = args->n_trames_errors;
+	std::atomic<int> *nb_simulation = args->nb_simulation;
+	int n_max_errors = args->n_max_errors;
+	///8 car on met tout les bit dans le max d'octets
+	uint8_t U_K[K/8] = {};
+	uint8_t C_N[N/8] = {};
+	uint8_t V_K[K/8] = {};
+	int32_t X_N[N] = {};
+	float Y_N[N] = {};
+	float L_N[N] = {};
+	int8_t L8_N[N] = {};
+	size_t n_reps = N/K;
+	while((*n_trames_errors) < n_max_errors){
+		// printf("Thread %d : Début de la chaine\n", (int)sigma);
+		if (!mod_all_ones){
+			#ifdef ENABLE_STATS
+			auto source_start = std::chrono::high_resolution_clock::now();
+			#endif
+			if (src_all_zeros) source_generate_all_zeros(U_K, K);
+					else source_generate_task2(U_K, K);
+			#ifdef ENABLE_STATS
+			auto source_end = std::chrono::high_resolution_clock::now();
+			record_block(BLOCK_SOURCE, source_start, source_end);
+			#endif
+
+			// printf("Thread %d : Fin generation\n", (int)sigma);
+			#ifdef ENABLE_STATS
+			auto encoder_start = std::chrono::high_resolution_clock::now();
+			#endif
+			codec_repetition_encode_task2(U_K, C_N, K, n_reps);
+			#ifdef ENABLE_STATS
+			auto encoder_end = std::chrono::high_resolution_clock::now();
+			record_block(BLOCK_ENCODER, encoder_start, encoder_end);
+			#endif
+
+			// printf("Thread %d : Fin encodage\n", (int)sigma);
+			#ifdef ENABLE_STATS
+			auto modulator_start = std::chrono::high_resolution_clock::now();
+			#endif
+			modem_BPSK_modulate_vectorisee_neon_task2(C_N, X_N, N);
+			#ifdef ENABLE_STATS
+			auto modulator_end = std::chrono::high_resolution_clock::now();
+			record_block(BLOCK_MODULATOR, modulator_start, modulator_end);
+			#endif
+		}
+		else{
+			#ifdef ENABLE_STATS
+			auto modulator_start = std::chrono::high_resolution_clock::now();
+			#endif
+			modem_BPSK_modulate_all_ones(C_N, X_N, N);
+			#ifdef ENABLE_STATS
+			auto modulator_end = std::chrono::high_resolution_clock::now();
+			record_block(BLOCK_MODULATOR, modulator_start, modulator_end);
+			#endif
+		}
+
+		// printf("Thread %d : Fin modulation\n", (int)sigma);
+		#ifdef ENABLE_STATS
+		auto channel_start = std::chrono::high_resolution_clock::now();
+		#endif
+		channel_AWGN_add_noise(X_N, Y_N, N, sigma);
+		#ifdef ENABLE_STATS
+		auto channel_end = std::chrono::high_resolution_clock::now();
+		record_block(BLOCK_CHANNEL, channel_start, channel_end);
+		#endif
+
+		// printf("Thread %d : Fin canal\n", (int)sigma);
+		#ifdef ENABLE_STATS
+		auto demodulator_start = std::chrono::high_resolution_clock::now();
+		#endif
+		modem_BPSK_demodulate_neon(Y_N, L_N, K*n_reps, sigma);
+		#ifdef ENABLE_STATS
+		auto demodulator_end = std::chrono::high_resolution_clock::now();
+		record_block(BLOCK_DEMODULATOR, demodulator_start, demodulator_end);
+		#endif
+
+		// printf("Thread %d : Fin démodulation\n", (int)sigma);
+		if(decode_method == "rep-hard"){
+			codec_repetition_hard_decode_task2(L_N, V_K, K, n_reps);
+		}else if(decode_method == "rep-soft"){
+			codec_repetition_soft_decode_task2(L_N, V_K, K, n_reps);
+		}else if(decode_method == "rep-hard8-neon"){
+				quantizer_transform8(L_N, L8_N, K*n_reps, s_quant, f_quant);
+				codec_repetition_hard_decode8_neon_task2(L8_N, V_K, K, n_reps);
+		}else if(decode_method == "rep-soft8-neon"){
+				quantizer_transform8(L_N, L8_N, K*n_reps, s_quant, f_quant);
+				codec_repetition_soft_decode8_neon_task2(L8_N, V_K, K, n_reps);
+		}else if(decode_method == "rep-hard8"){
+			quantizer_transform8(L_N, L8_N, K*n_reps, s_quant, f_quant);
+			codec_repetition_hard_decode8_task2(L8_N, V_K, K, n_reps);
+		}else{
+			//sinon c'est rep-soft8
+			quantizer_transform8(L_N, L8_N, K*n_reps, s_quant, f_quant);
+			codec_repetition_soft_decode8_task2(L8_N, V_K, K, n_reps);
+		}
+
+		// printf("Thread %d : Fin decode\n", (int)sigma);
+		#ifdef ENABLE_STATS
+		auto monitor_start = std::chrono::high_resolution_clock::now();
+		#endif
+		//variables locales pour monitor apres maj atomic
+        uint64_t local_bit_errors = 0;
+        uint64_t local_frame_errors = 0;
+		// incrémente n_bit_errors et n_trames_errors
+		//monitor_check_errors(U_K, V_K, K, n_bit_errors, n_trames_errors);
+		monitor_check_errors_neon_task2(U_K, V_K, K, &local_bit_errors, &local_frame_errors);
+        
+        if (local_frame_errors > 0) {
+            (*n_trames_errors)++; //thread-safe
+            (*n_bit_errors) += local_bit_errors; //ajt des bit faux
+        }
+		#ifdef ENABLE_STATS
+		auto monitor_end = std::chrono::high_resolution_clock::now();
+		record_block(BLOCK_MONITOR, monitor_start, monitor_end);
+		#endif
+
+		(*nb_simulation)++;
+	}
+	// printf("Thread %d : Fin de la chaine\n", (int)sigma);
+	return NULL;
+}

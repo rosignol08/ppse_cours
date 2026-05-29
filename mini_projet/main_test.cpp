@@ -75,7 +75,7 @@ int main(int argc, char* argv[]){
 	clear_file << "Eb/N0,Es/N0,sigma,be,fe,fn,BER,FER,sim_time_s,time_per_frame_s,Sim_thr_Mbps\n";
 	clear_file.close();
 	
-	montecarlo_simulation(m_arg, M_arg, s_arg, e_arg, K_arg, N_arg, D_arg, output_filename,mod_all_ones,s_quant,f_quant, src_all_zeros);
+	montecarlo_simulation_task2(m_arg, M_arg, s_arg, e_arg, K_arg, N_arg, D_arg, output_filename,mod_all_ones,s_quant,f_quant, src_all_zeros);
 	auto fin = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(fin - start);
 	std::cout << "ça a pris " << duration.count() << " ms" << std::endl;

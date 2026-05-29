@@ -68,7 +68,7 @@ for etiquette, data in donnees.items():
     valid_times = [value for value in data["sim_time"] if not math.isnan(value)]
     total_time = sum(valid_times)
     average_time = total_time / len(valid_times) if valid_times else float('nan')
-    print(f"- {etiquette}: total = {total_time:.3f} s, moyen par SNR = {average_time:.3f} s")
+    print(f"- {etiquette}: total = {total_time:.3f} ms, moyen par SNR = {average_time:.3f} ms")
 
 # 2. Création du graphique
 fig, axes = plt.subplots(4, 1, figsize=(12, 16), sharex=True)
