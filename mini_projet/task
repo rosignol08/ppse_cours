@@ -1,0 +1,5 @@
+Task II-1 Speedup the modulator. [difficulty: easy] Vectorize it with NEON instructions.
+
+Task II-2 Speedup the demodulator. [difficulty: easy] Vectorize it with NEON instructions.
+
+Task II-3 Speedup the monitor. [difficulty: easy to medium] Vectorize it with NEON instructions.
