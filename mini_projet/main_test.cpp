@@ -70,9 +70,6 @@ int main(int argc, char* argv[]){
 	srand(time(NULL));
 
 	auto start = std::chrono::high_resolution_clock::now();
-	
-
-	//std::string output_filename = "results.csv";
 
 	std::ofstream clear_file(output_filename);
 	clear_file << "Eb/N0,Es/N0,sigma,be,fe,fn,BER,FER,sim_time_s,time_per_frame_s,Sim_thr_Mbps\n";

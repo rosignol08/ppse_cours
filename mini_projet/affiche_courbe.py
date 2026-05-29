@@ -34,11 +34,11 @@ def lire_csv(nom_fichier):
 # 1. Chargement des données
 fichiers = [
     ("base_rep-soft.csv", "Base soft", "red", "-"),
-    ("task2_rep-soft.csv", "Task2 soft", "darkred", "--"),
+    ("travail_rep-soft.csv", "Task2 soft", "darkred", "--"),
     ("base_rep-soft8_qs5_qf1.csv", "Base soft8", "green", "-"),
-    ("task2_rep-soft8_qs5_qf1.csv", "Task2 soft8", "darkgreen", "--"),
+    ("travail_rep-soft8_qs5_qf1.csv", "Task2 soft8", "darkgreen", "--"),
     ("base_rep-soft8-neon_qs5_qf1.csv", "Base soft8 neon", "blue", "-"),
-    ("task2_rep-soft8-neon_qs5_qf1.csv", "Task2 soft8 neon", "navy", "--"),
+    ("travail_rep-soft8-neon_qs5_qf1.csv", "Task2 soft8 neon", "navy", "--"),
 ]
 
 donnees = {}
